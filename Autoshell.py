@@ -1,43 +1,3 @@
-"""
-DESCRIPTION:
-
-This Python script creates an AI assistant that can interact with your computer's PowerShell. It's called "Autoshell". 
-The assistant is capable of understanding your voice, executing commands in the PowerShell, and answering via speech synthesis. 
-This approach provides a nearly hands-free way to control your PC. The user steers the conversation via a GUI.
-
-The program allows for a wide range of functionalities, like:
-    - opening applications
-    - get specifications about your PC (e.g. battery level, hardware components, network connections etc.)
-    - create files and folders, navigate through your file system
-    - shutdown, restart, log off, lock your PC
-    - write and run little scripts
-    - just chat with it in multiple languages
-    - many more to discover... feel free to play around with it!
-
-The AI models are provided by OpenAI's API. The execution of the program will cost money and your data will be forwarded to OpenAI's servers.
-In order to run the models you need to create an account and get a resepctive API key.
-The API key needs to be stored in an environment variable called "OPENAI_API_KEY"! 
-Furthermore, you need an internet connection to run the program.
-
-The program uses the following AI models:
-    - GPT-3.5 to generate text (16k tokens context length)
-    - Whisper to understand the user's voice
-    - TTS1 (6 different voice models) to synthesize speech
-
-The autoshell.exe needs to be in a directory with the folders "logs" and "files" whereby "files" needs to contain the following files: 
-    - audio_dummy.wav
-    - 6 voice model examples (example_alloy.mp3, example_echo.mp3, example_fable.mp3, example_nova.mp3, example_shimmer.mp3, example_onyx.mp3)
-    - pre_prompt_shell.txt
-    - pre_prompt_forwarder.txt
-
-20.01.2024
-"""
-
-"""
-- process the sound output as a subprocess, so that it won't freeze the program
-- try to give admin rights to the shell process
-"""
-
 from openai import OpenAI
 import os
 import pyaudio
@@ -179,49 +139,19 @@ class GuiHandler:
             gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Disabled\n\n", "light_blue")        
 
     def change_voice(self, voice):
-        # change the voice of the ai
-        if voice == "Voice = Onyx":
-            sound_handler.voice_agent = "onyx"
-            gui_handler.print_text("SYSTEM INFO: \nVoice changed to Onyx.\n\n", "light_blue")
-            # play a sample sound
-            os.chdir(gui_handler.files_path)
-            gui_handler.play_sound("example_onyx.mp3")
-            os.chdir(gui_handler.main_path)
-        elif voice == "Voice = Alloy":
-            sound_handler.voice_agent = "alloy"
-            gui_handler.print_text("SYSTEM INFO: \nVoice changed to Alloy.\n\n", "light_blue")
-            # play a sample sound
-            os.chdir(gui_handler.files_path)
-            gui_handler.play_sound("example_alloy.mp3")
-            os.chdir(gui_handler.main_path)
-        elif voice == "Voice = Echo":
-            sound_handler.voice_agent = "echo"
-            gui_handler.print_text("SYSTEM INFO: \nVoice changed to Echo.\n\n", "light_blue")
-            # play a sample sound
-            os.chdir(gui_handler.files_path)
-            gui_handler.play_sound("example_echo.mp3")
-            os.chdir(gui_handler.main_path)
-        elif voice == "Voice = Fable":
-            sound_handler.voice_agent = "fable"
-            gui_handler.print_text("SYSTEM INFO: \nVoice changed to Fable.\n\n", "light_blue")
-            # play a sample sound
-            os.chdir(gui_handler.files_path)
-            gui_handler.play_sound("example_fable.mp3")
-            os.chdir(gui_handler.main_path)
-        elif voice == "Voice = Nova":
-            sound_handler.voice_agent = "nova"
-            gui_handler.print_text("SYSTEM INFO: \nVoice changed to Nova.\n\n", "light_blue")
-            # play a sample sound
-            os.chdir(gui_handler.files_path)
-            gui_handler.play_sound("example_nova.mp3")
-            os.chdir(gui_handler.main_path)
-        elif voice == "Voice = Shimmer":
-            sound_handler.voice_agent = "shimmer"
-            gui_handler.print_text("SYSTEM INFO: \nVoice changed to Shimmer.\n\n", "light_blue")
-            # play a sample sound
-            os.chdir(gui_handler.files_path)
-            gui_handler.play_sound("example_shimmer.mp3")
-            os.chdir(gui_handler.main_path)
+        # Extract voice name from selection (remove "Voice = " prefix)
+        voice_name = voice.split("= ")[1].lower() if "= " in voice else voice.lower()
+        
+        # Change the voice of the AI
+        sound_handler.voice_agent = voice_name
+        
+        # Display confirmation message
+        gui_handler.print_text(f"SYSTEM INFO: \nVoice changed to {voice_name.capitalize()}.\n\n", "light_blue")
+        
+        # Play a sample sound
+        os.chdir(gui_handler.files_path)
+        gui_handler.play_sound(f"example_{voice_name}.mp3")
+        os.chdir(gui_handler.main_path)
 
     # define what happens when a key is pressed
     def key_pressed(self, event):
@@ -430,7 +360,36 @@ class SoundHandler:
 # connection to powershell
 class ShellHandler:
     def __init__(self):
-        self.shell_process = subprocess.Popen(["powershell", "-Command", "-"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding = 'utf-8')
+        # Use common PowerShell locations or search in PATH
+        powershell_paths = [
+            r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+            r"C:\Windows\System32\powershell.exe",
+            "powershell"  # Will use PATH as fallback
+        ]
+        
+        powershell_exe = None
+        for path in powershell_paths:
+            try:
+                # Test if we can start PowerShell with this path
+                subprocess.run([path, "-Command", "exit"], 
+                               stdout=subprocess.PIPE, 
+                               stderr=subprocess.PIPE, 
+                               check=False)
+                powershell_exe = path
+                break
+            except FileNotFoundError:
+                continue
+        
+        if not powershell_exe:
+            raise FileNotFoundError("Could not find PowerShell executable. Please ensure PowerShell is installed.")
+        
+        self.shell_process = subprocess.Popen(
+            [powershell_exe, "-Command", "-"], 
+            stdin=subprocess.PIPE, 
+            stdout=subprocess.PIPE, 
+            text=True, 
+            encoding='utf-8'
+        )
 
     def catch_shell_output(self):
         shell_output = ""
