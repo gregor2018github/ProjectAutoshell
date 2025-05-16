@@ -70,17 +70,7 @@ class GuiHandler:
     def print_text(self, text, color):
         
         self.text_field.config(state="normal")
-
-        if color == "green":
-            self.text_field.insert(tk.END, text, "tag_green")
-        elif color == "red":
-            self.text_field.insert(tk.END, text, "tag_red")
-        elif color == "white":
-            self.text_field.insert(tk.END, text, "tag_white")
-        elif color == "blue":
-            self.text_field.insert(tk.END, text, "tag_blue")
-        elif color == "light_blue":
-            self.text_field.insert(tk.END, text, "tag_light_blue")
+        self.text_field.insert(tk.END, text, f"tag_{color}")
         
         # refresh the text field
         self.text_field.update_idletasks()
@@ -92,9 +82,11 @@ class GuiHandler:
     def toggle_record(self):
         # Toggle the recording state
         if self.record_state == 'start':
-            self.start_record()
-            self.record_button.config(text="Stop Recording 🎤")
-            self.record_state = 'stop'
+            if self.start_record():  # Check if recording started successfully
+                self.record_button.config(text="Stop Recording 🎤")
+                self.record_state = 'stop'
+            # Else, start_record failed; button and state remain 'start'. 
+            # Error message would have been printed by SoundHandler.
         else:
             self.stop_record()
             self.record_button.config(text="Start Recording 🎤")
@@ -102,7 +94,7 @@ class GuiHandler:
 
     def start_record(self):
         # Start recording
-        sound_handler.start_recording("audio_record")
+        return sound_handler.start_recording("audio_record")
     
     def stop_record(self):
         # Stop recording
@@ -230,7 +222,8 @@ class SoundHandler:
         self.frames = []
         self.voice_agent = "onyx"
 
-    def start_recording(self, name):
+    def start_recording(self, name)->bool:
+        """Start recording audio from the microphone and save it to a file. Returns True if successful, False otherwise."""
         self.is_recording = True
         self.filename = name + ".wav"
         self.chunk = 1024
@@ -238,20 +231,39 @@ class SoundHandler:
         self.channels = 1
         self.sample_rate = 44100
         self.p = pyaudio.PyAudio()
-        self.stream = self.p.open(format=self.FORMAT,
-                                  channels=self.channels,
-                                  rate=self.sample_rate,
-                                  input=True,
-                                  output=True,
-                                  frames_per_buffer=self.chunk)
-        print("Recording...")
-
-        def record_thread():
-            while self.is_recording:
-                data = self.stream.read(self.chunk)
-                self.frames.append(data)
-
-        threading.Thread(target=record_thread).start()
+        
+        try:
+            # Only use input mode for recording
+            self.stream = self.p.open(
+                format=self.FORMAT,
+                channels=self.channels,
+                rate=self.sample_rate,
+                input=True,  # Only need input for recording
+                output=False,  # Don't use output during recording
+                frames_per_buffer=self.chunk)
+            
+            print("Recording...")
+    
+            def record_thread():
+                self.frames = []  # Reset frames list
+                while self.is_recording:
+                    try:
+                        data = self.stream.read(self.chunk, exception_on_overflow=False)
+                        self.frames.append(data)
+                    except Exception as e:
+                        print(f"Error in recording thread: {str(e)}")
+                        break
+            
+            threading.Thread(target=record_thread).start()
+            return True  # Recording started successfully
+        
+        except Exception as e:
+            self.is_recording = False
+            self.p.terminate()
+            error_message = f"Could not start recording: {str(e)}\n\n"
+            print(error_message)
+            gui_handler.print_text(error_message, "red")
+            return False  # Failed to start recording
 
     def stop_recording(self):
         os.chdir(gui_handler.files_path)
