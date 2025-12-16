@@ -16,6 +16,42 @@ from tkinter import ttk
 import wave
 
 #-------------------------------------------------------
+# Constants and Global Variables
+#-------------------------------------------------------
+
+# UI Stuff
+BACKGROUND_IMAGE = "background_image2.png"
+TEXT_COLOR_USER = "white"
+TEXT_COLOR_SETTINGS = "light_blue"
+
+# Sound Stuff
+SOUND_CHUNK = 1024
+SOUND_CHANNELS = 1
+SOUND_SAMPLE_RATE = 44100
+TTS_MODEL = "tts-1"
+SPEECH_TO_TEXT_MODEL = "whisper-1"
+
+# Shell Stuff
+TEXT_COLOR_POWER_SHELL = "red"
+MAX_TOKENS_SHELL_ANSWER = 1000
+
+# OpenAI Stuff
+OPEN_AI_API_KEY_ENV_VARIABLE = "OPENAI_API_KEY"
+LARGE_LANGUAGE_MODEL = "gpt-3.5-turbo-16k"
+MODEL_TEMPERATURE = 1.01
+MODEL_MAX_TOKENS = 1000
+MODEL_TOP_P = 1
+MODEL_FREQUENCY_PENALTY = 0
+MODEL_PRESENCE_PENALTY = 0
+LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION = "gpt-3.5-turbo"
+FORWARDING_MODEL_TEMPERATURE = 0.5
+FORWARDING_MODEL_MAX_TOKENS = 5
+FORWARDING_MODEL_TOP_P = 1
+FORWARDING_MODEL_FREQUENCY_PENALTY = 0
+FORWARDING_MODEL_PRESENCE_PENALTY = 0
+
+
+#-------------------------------------------------------
 # Guided User Interface
 #-------------------------------------------------------
 
@@ -38,7 +74,7 @@ class GuiHandler:
 
         # Load the image file
         # file path is current path + /files + /background_image.png
-        picture_path = os.path.join(os.getcwd(), "files", "background_image.png")
+        picture_path = os.path.join(os.getcwd(), "files", BACKGROUND_IMAGE)
         bg_image = PhotoImage(file=picture_path)
         # Create a label with the image
         bg_label = tk.Label(self.root, image=bg_image)
@@ -115,7 +151,7 @@ class GuiHandler:
         user_input = SoundHandler.speech_to_text("audio_record.wav", openai_handler.OpenAiClient)
 
         # print user input to gui, then generate ai response
-        gui_handler.print_text(f"USER: \n{user_input}\n\n", "white")
+        gui_handler.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
         PromptHandler.add_to_chat_history(user_input, "user")
         OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
 
@@ -123,19 +159,19 @@ class GuiHandler:
         # Toggle the execution mode
         if self.toggle_state.get() == 1:
             prompt_handler.ask_for_execution = False
-            gui_handler.print_text("SYSTEM INFO: \nDirect Code Execution Enabled\n\n", "light_blue")
+            gui_handler.print_text("SYSTEM INFO: \nDirect Code Execution Enabled\n\n", TEXT_COLOR_SETTINGS)
         else:
             prompt_handler.ask_for_execution = True
-            gui_handler.print_text("SYSTEM INFO: \nDirect Code Execution Disabled\n\n", "light_blue")
+            gui_handler.print_text("SYSTEM INFO: \nDirect Code Execution Disabled\n\n", TEXT_COLOR_SETTINGS)
     
     def toggle_execution_two(self):
         # toggle follow up question mode
         if self.toggle_state_two.get() == 1:
             prompt_handler.follow_up_questions = True
-            gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Enabled\n\n", "light_blue")
+            gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Enabled\n\n", TEXT_COLOR_SETTINGS)
         else:
             prompt_handler.follow_up_questions = False
-            gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Disabled\n\n", "light_blue")        
+            gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Disabled\n\n", TEXT_COLOR_SETTINGS)        
 
     def change_voice(self, voice):
         # Extract voice name from selection (remove "Voice = " prefix)
@@ -145,7 +181,7 @@ class GuiHandler:
         sound_handler.voice_agent = voice_name
         
         # Display confirmation message
-        gui_handler.print_text(f"SYSTEM INFO: \nVoice changed to {voice_name.capitalize()}.\n\n", "light_blue")
+        gui_handler.print_text(f"SYSTEM INFO: \nVoice changed to {voice_name.capitalize()}.\n\n", TEXT_COLOR_SETTINGS)
         
         # Play a sample sound
         os.chdir(gui_handler.files_path)
@@ -156,7 +192,7 @@ class GuiHandler:
     def key_pressed(self, event):
         if prompt_handler.listen_to_keys:
             character = event.char
-            gui_handler.print_text(f"USER: {character}\n\n", "white")
+            gui_handler.print_text(f"USER: {character}\n\n", TEXT_COLOR_USER)
             prompt_handler.pressed_key = character
             prompt_handler.key_is_caught= True
     
@@ -236,10 +272,10 @@ class SoundHandler:
         """Start recording audio from the microphone and save it to a file. Returns True if successful, False otherwise."""
         self.is_recording = True
         self.filename = name + ".wav"
-        self.chunk = 1024
+        self.chunk = SOUND_CHUNK
         self.FORMAT = pyaudio.paInt16
-        self.channels = 1
-        self.sample_rate = 44100
+        self.channels = SOUND_CHANNELS
+        self.sample_rate = SOUND_SAMPLE_RATE
         self.p = pyaudio.PyAudio()
         
         try:
@@ -293,7 +329,7 @@ class SoundHandler:
         # go to file subdirectory
         speech_file_path = gui_handler.files_path + "/generated_audio.mp3"
         response = client.audio.speech.create(
-            model="tts-1",
+            model=TTS_MODEL,
             voice=voice_agent,
             input=text
         )
@@ -306,7 +342,7 @@ class SoundHandler:
         os.chdir(gui_handler.files_path)
         audio_file= open(audio_file_path, "rb")
         transcript = client.audio.transcriptions.create(
-        model="whisper-1", 
+        model=SPEECH_TO_TEXT_MODEL, 
         file=audio_file
         )
         # change directory back to main directory
@@ -319,25 +355,20 @@ class SoundHandler:
         def speech_to_text(audio_file_path):
             audio_file= open(audio_file_path, "rb")
             transcript = client.audio.transcriptions.create(
-            model="whisper-1", 
+            model=SPEECH_TO_TEXT_MODEL, 
             file=audio_file
             )
             # print text to gui
-            gui_handler.print_text(f"USER: \n{transcript.text}\n\n", "white") 
+            gui_handler.print_text(f"USER: \n{transcript.text}\n\n", TEXT_COLOR_USER) 
             return transcript.text
         
         # record the audio from the laptop microphone to wav file
         def record_audio(name, seconds):
-            # the file name output you want to record into
             filename = name + ".wav"
-            # set the chunk size of 1024 samples
-            chunk = 1024
-            # sample format
+            chunk = SOUND_CHUNK
             FORMAT = pyaudio.paInt16
-            # mono, change to 2 if you want stereo
-            channels = 1
-            # 44100 samples per second
-            sample_rate = 44100
+            channels = SOUND_CHANNELS
+            sample_rate = SOUND_SAMPLE_RATE
             record_seconds = seconds
             # initialize PyAudio object
             p = pyaudio.PyAudio()
@@ -350,7 +381,7 @@ class SoundHandler:
                             frames_per_buffer=chunk)
             frames = []
             print("Recording...")
-            for i in range(int(44100 / chunk * record_seconds)):
+            for i in range(int(sample_rate / chunk * record_seconds)):
                 data = stream.read(chunk)
                 # if you want to hear your voice while recording
                 # stream.write(data)
@@ -447,20 +478,20 @@ class ShellHandler:
         shell_output = self.catch_shell_output()
         self.save_to_file(shell_output, commands, "complete_command_history.txt")
 
-        gui_handler.print_text(f"POWER SHELL: \n{shell_output}\n\n", "red") 
+        gui_handler.print_text(f"POWER SHELL: \n{shell_output}\n\n", TEXT_COLOR_POWER_SHELL) 
 
         # count tokens of the power shell answer, also count the letters of power shell answer
         shell_answer_tokens = PromptHandler.num_tokens_from_string(shell_output, 'cl100k_base') #cl100k_base #p50k_base
         shell_answer_letters = len(shell_output)
 
         # if the answer is too long, the cut it down
-        if shell_answer_tokens > 1000:
+        if shell_answer_tokens > MAX_TOKENS_SHELL_ANSWER:
             # check how many percentage we are too long in terms of tokens, then cut the answer down by that percentage (in terms of letters)
-            percentage_too_long = (shell_answer_tokens-1000)/shell_answer_tokens
+            percentage_too_long = (shell_answer_tokens-MAX_TOKENS_SHELL_ANSWER)/shell_answer_tokens
             shell_output = shell_output[:int(round(shell_answer_letters*(1-percentage_too_long), 0))]
-            shell_output += "\n\nSYSTEM INFO: \nPower Shell Answer exceeds 1000 tokens and was thus shortened.\n\n"
+            shell_output += f"\n\nSYSTEM INFO: \nPower Shell Answer exceeds {MAX_TOKENS_SHELL_ANSWER} tokens and was thus shortened.\n\n"
             # speak to the user
-            gui_handler.print_text(f"SYSTEM INFO: \nPower Shell Answer exceeds 1000 tokens and was thus shortened for the prompt history.\n\n", "light_blue")
+            gui_handler.print_text(f"SYSTEM INFO: \nPower Shell Answer exceeds {MAX_TOKENS_SHELL_ANSWER} tokens and was thus shortened for the prompt history.\n\n", TEXT_COLOR_SETTINGS)
 
         
         PromptHandler.add_to_chat_history(shell_output, "system")
@@ -476,19 +507,19 @@ class OpenAiHandler:
 
     def __init__(self):
         self.OpenAiClient = OpenAI(
-            api_key=os.environ['OPENAI_API_KEY'],
+            api_key=os.environ[OPEN_AI_API_KEY_ENV_VARIABLE],
         )
 
     def generate_AI_response(chat_history, client):
         # create a completion of the existing conversation
         response = client.chat.completions.create(
-        model="gpt-3.5-turbo-16k", #gpt-3.5-turbo-1106 ; gpt-3.5-turbo-16k ; gpt-3.5-turbo
+        model=LARGE_LANGUAGE_MODEL, #gpt-3.5-turbo-1106 ; gpt-3.5-turbo-16k ; gpt-3.5-turbo
         messages=chat_history,
-        temperature=1.01,
-        max_tokens=1000,
-        top_p=1,
-        frequency_penalty=0,
-        presence_penalty=0
+        temperature=MODEL_TEMPERATURE,
+        max_tokens=MODEL_MAX_TOKENS,
+        top_p=MODEL_TOP_P,
+        frequency_penalty=MODEL_FREQUENCY_PENALTY,
+        presence_penalty=MODEL_PRESENCE_PENALTY
         )
 
         response_message = response.choices[0].message.content 
@@ -497,22 +528,21 @@ class OpenAiHandler:
         if response_message == prompt_handler.last_ai_response:
             # if so, then reset the chat history
             prompt_handler.chat_history = PromptHandler.reset_chat_history()
-            gui_handler.print_text(f"SYSTEM INFO: \nSame AI response as last time, chat history reset.\n\n", "light_blue")
+            gui_handler.print_text(f"SYSTEM INFO: \nSame AI response as last time, chat history reset.\n\n", TEXT_COLOR_SETTINGS)
 
         # check if message needs to be forwarded to the user or to the shell
         PromptHandler.forward_by_ai(response_message)
 
-    
     def generate_forwarding_decision(forwarding_chat_history, client):
         # create a completion of the existing conversation
         response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model=LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION, #gpt-3.5-turbo-1106 ; gpt-3.5-turbo-16k ; gpt-3.5-turbo
         messages=forwarding_chat_history,
-        temperature=1.01,
-        max_tokens=5,
-        top_p=1,
-        frequency_penalty=0,
-        presence_penalty=0
+        temperature=FORWARDING_MODEL_TEMPERATURE,
+        max_tokens=FORWARDING_MODEL_MAX_TOKENS,
+        top_p=FORWARDING_MODEL_TOP_P,
+        frequency_penalty=FORWARDING_MODEL_FREQUENCY_PENALTY,
+        presence_penalty=FORWARDING_MODEL_PRESENCE_PENALTY
         )
 
         response_message = response.choices[0].message.content 
