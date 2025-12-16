@@ -23,6 +23,7 @@ import wave
 BACKGROUND_IMAGE = "background_image2.png"
 TEXT_COLOR_USER = "white"
 TEXT_COLOR_SETTINGS = "light_blue"
+TEXT_COLOR_POWER_SHELL = "red"
 TEXT_COLOR_AI = "white"
 TEXT_COLOR_AI_PROPOSAL = "green"
 
@@ -34,7 +35,6 @@ TTS_MODEL = "tts-1"
 SPEECH_TO_TEXT_MODEL = "whisper-1"
 
 # Shell Stuff
-TEXT_COLOR_POWER_SHELL = "red"
 MAX_TOKENS_SHELL_ANSWER = 1000
 
 # OpenAI Stuff
@@ -89,8 +89,13 @@ class GuiHandler:
         self.create_start_stop_record_button()
         self.create_toggle_button()
         self.create_toogle_button_two()
+        self.create_toggle_button_keyboard()
         self.create_voice_dropdown()
         self.create_text_window()
+
+        # Keyboard input mode variables
+        self.keyboard_input_mode = False
+        self.keyboard_input_buffer = ""
 
         # create two paths, the main path and the subdirectory path for files
         self.main_path = os.getcwd()
@@ -125,7 +130,14 @@ class GuiHandler:
         self.text_field.config(state="disabled")
 
     def toggle_record(self):
-        # Toggle the recording state
+        # Check if keyboard input mode is enabled
+        if self.toggle_state_keyboard.get() == 1:
+            # Start keyboard input mode
+            if not self.keyboard_input_mode:
+                self.start_keyboard_input()
+            return
+        
+        # Toggle the recording state (microphone mode)
         if self.record_state == 'start':
             if self.start_record():  # Check if recording started successfully
                 self.record_button.config(text="Stop Recording 🎤")
@@ -157,6 +169,107 @@ class GuiHandler:
         PromptHandler.add_to_chat_history(user_input, "user")
         OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
 
+    def start_keyboard_input(self):
+        """Start keyboard input mode - allows user to type their message"""
+        self.keyboard_input_mode = True
+        self.keyboard_input_buffer = ""
+        self.record_button.config(text="Type & Press Enter ⌨️")
+        
+        # Enable the text field for input
+        self.text_field.config(state="normal")
+        self.text_field.insert(tk.END, "YOUR INPUT: \n", "tag_white")
+        self.text_field.see(tk.END)
+        
+        # Store the position where user input starts
+        self.keyboard_input_start = self.text_field.index(tk.END)
+        
+        # Bind keyboard events for typing
+        self.root.bind("<Key>", self.handle_keyboard_input)
+    
+    def handle_keyboard_input(self, event):
+        """Handle keyboard input when in keyboard input mode"""
+        # If not in keyboard input mode but listen_to_keys is active (for y/n prompts), use the original handler
+        if not self.keyboard_input_mode:
+            if prompt_handler.listen_to_keys:
+                character = event.char
+                gui_handler.print_text(f"USER: {character}\n\n", TEXT_COLOR_USER)
+                prompt_handler.pressed_key = character
+                prompt_handler.key_is_caught = True
+            return
+        
+        # Handle Enter key to submit input
+        if event.keysym == "Return":
+            self.submit_keyboard_input()
+            return "break"
+        
+        # Handle Backspace
+        if event.keysym == "BackSpace":
+            if self.keyboard_input_buffer:
+                self.keyboard_input_buffer = self.keyboard_input_buffer[:-1]
+                # Remove last character from text field
+                self.text_field.delete("end-2c", "end-1c")
+            return "break"
+        
+        # Handle Escape to cancel
+        if event.keysym == "Escape":
+            self.cancel_keyboard_input()
+            return "break"
+        
+        # Handle regular character input
+        if event.char and event.char.isprintable():
+            self.keyboard_input_buffer += event.char
+            self.text_field.insert(tk.END, event.char, "tag_white")
+            self.text_field.see(tk.END)
+            return "break"
+        
+        return "break"
+    
+    def submit_keyboard_input(self):
+        """Submit the keyboard input and process it like voice input"""
+        user_input = self.keyboard_input_buffer.strip()
+        
+        # Reset keyboard input mode
+        self.keyboard_input_mode = False
+        self.keyboard_input_buffer = ""
+        self.record_button.config(text="Start Recording 🎤")
+        
+        # Disable text field editing
+        self.text_field.config(state="normal")
+        self.text_field.insert(tk.END, "\n\n", "tag_white")
+        self.text_field.config(state="disabled")
+        
+        # Rebind original key handler
+        self.root.bind("<Key>", self.key_pressed)
+        
+        if not user_input:
+            gui_handler.print_text("SYSTEM INFO: \nEmpty input, please try again.\n\n", TEXT_COLOR_SETTINGS)
+            return
+        
+        # if follow up questions are enabled, then do not reset the chat history
+        if not prompt_handler.follow_up_questions:
+            prompt_handler.chat_history = PromptHandler.reset_chat_history()
+        
+        # Process the input same as voice input
+        gui_handler.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
+        PromptHandler.add_to_chat_history(user_input, "user")
+        OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
+    
+    def cancel_keyboard_input(self):
+        """Cancel keyboard input mode"""
+        self.keyboard_input_mode = False
+        self.keyboard_input_buffer = ""
+        self.record_button.config(text="Start Recording 🎤")
+        
+        # Disable text field editing and add cancellation message
+        self.text_field.config(state="normal")
+        self.text_field.insert(tk.END, "\n[Cancelled]\n\n", "tag_light_blue")
+        self.text_field.config(state="disabled")
+        
+        # Rebind original key handler
+        self.root.bind("<Key>", self.key_pressed)
+        
+        gui_handler.print_text("SYSTEM INFO: \nKeyboard input cancelled.\n\n", TEXT_COLOR_SETTINGS)
+
     def toggle_execution(self):
         # Toggle the execution mode
         if self.toggle_state.get() == 1:
@@ -174,6 +287,13 @@ class GuiHandler:
         else:
             prompt_handler.follow_up_questions = False
             gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Disabled\n\n", TEXT_COLOR_SETTINGS)        
+
+    def toggle_keyboard_input(self):
+        # toggle keyboard input mode
+        if self.toggle_state_keyboard.get() == 1:
+            gui_handler.print_text("SYSTEM INFO: \nKeyboard Input Enabled - Type your message and press Enter\n\n", TEXT_COLOR_SETTINGS)
+        else:
+            gui_handler.print_text("SYSTEM INFO: \nKeyboard Input Disabled\n\n", TEXT_COLOR_SETTINGS)
 
     def change_voice(self, voice):
         # Extract voice name from selection (remove "Voice = " prefix)
@@ -223,6 +343,15 @@ class GuiHandler:
         toggle_button_two = ttk.Checkbutton(self.root, text="Follow-Up Questions", variable=self.toggle_state_two, command=lambda: self.toggle_execution_two())
         toggle_button_two.pack(pady=0)
     
+    def create_toggle_button_keyboard(self):
+        # Create a variable to hold the state of the keyboard input toggle button
+        self.toggle_state_keyboard = tk.IntVar()
+        self.toggle_state_keyboard.set(0)  # Set the initial state to unchecked
+
+        # Create a toggle button for keyboard input
+        toggle_button_keyboard = ttk.Checkbutton(self.root, text="Use Keyboard Input", variable=self.toggle_state_keyboard, command=lambda: self.toggle_keyboard_input())
+        toggle_button_keyboard.pack(pady=0)
+
     def create_voice_dropdown(self):
         # Create a variable to hold the selected value
         self.voice = tk.StringVar()
@@ -465,15 +594,16 @@ class ShellHandler:
         return commands
 
     def save_to_file(self, shell_output, commands, filename):
-        os.chdir(gui_handler.log_path)
+        # ensure logs directory exists
+        os.makedirs(gui_handler.log_path, exist_ok=True)
+        file_path = os.path.join(gui_handler.log_path, filename)
 
         # make it utf-8 so that also korean or russian characters can be saved
-        with open(filename, "a", encoding="utf-8") as f:
+        with open(file_path, "a", encoding="utf-8") as f:
             f.write("commands:\n")
             f.write(commands)
             f.write("\n\noutput:\n")
             f.write(shell_output)
-        os.chdir(gui_handler.main_path)
 
     def execute(self, commands):
         self.send_shell_commands(commands)
@@ -719,26 +849,21 @@ class PromptHandler:
     # save current message stream to a txt file, give it the current date and time as name
     def save_chat_history(chat_history):
         current_time = time.strftime("%d.%m.%Y-%Hh%Mm%Ss")
-
-        # get current working directory
-        cwd = os.getcwd()
-        # go to subdirectory /logs
-        subdirectory = "logs"
-        path = os.path.join(cwd, subdirectory)
-        os.chdir(path)
+        # ensure logs directory exists and build absolute target path
+        base_path = os.getcwd()
+        logs_dir = os.path.join(base_path, "logs")
+        os.makedirs(logs_dir, exist_ok=True)
+        log_path = os.path.join(logs_dir, f"chat_history_{current_time}.txt")
 
         # save as txt file in utf8 for compatibility with other languages
-        with open(f"chat_history_{current_time}.txt", "w", encoding="utf-8") as f:
-            #transform list of dictionaries into string
+        with open(log_path, "w", encoding="utf-8") as f:
+            # transform list of dictionaries into string
             chat_history_string = ""
             for item in chat_history:
                 role = item["role"]
                 text = item["content"]
                 chat_history_string += f"\n{role}: {text}\n"
             f.write(chat_history_string)
-            
-        # go back to cwd
-        os.chdir(cwd)
     
     # count the number of tokens in a string
     def num_tokens_from_string(string: str, encoding_name: str) -> int:
