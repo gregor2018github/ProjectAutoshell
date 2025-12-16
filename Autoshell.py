@@ -92,7 +92,7 @@ class GuiHandler:
         self.create_start_stop_record_button()
         self.create_toggle_button()
         self.create_toogle_button_two()
-        self.create_toggle_button_keyboard()
+        self.create_input_mode_radio_buttons()
         self.create_voice_dropdown()
         self.create_text_window()
 
@@ -135,6 +135,19 @@ class GuiHandler:
             focuscolor='none'
         )
         style.map('Modern.TCheckbutton',
+            background=[('active', '#d0d0d0'), ('selected', '#c0c0c0')],
+            foreground=[('active', '#1a1a1a'), ('selected', '#1a1a1a')]
+        )
+        
+        # Style for Radiobuttons
+        style.configure('Modern.TRadiobutton',
+            background='#c0c0c0',
+            foreground='#1a1a1a',
+            font=('Segoe UI', 10),
+            padding=(10, 8),
+            focuscolor='none'
+        )
+        style.map('Modern.TRadiobutton',
             background=[('active', '#d0d0d0'), ('selected', '#c0c0c0')],
             foreground=[('active', '#1a1a1a'), ('selected', '#1a1a1a')]
         )
@@ -188,7 +201,7 @@ class GuiHandler:
 
     def toggle_record(self):
         # Check if keyboard input mode is enabled
-        if self.toggle_state_keyboard.get() == 1:
+        if self.input_mode.get() == "keyboard":
             # Start keyboard input mode
             if not self.keyboard_input_mode:
                 self.start_keyboard_input()
@@ -369,13 +382,13 @@ class GuiHandler:
             prompt_handler.follow_up_questions = False
             gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Disabled\n\n", TEXT_COLOR_SETTINGS)        
 
-    def toggle_keyboard_input(self):
-        # toggle keyboard input mode
-        if self.toggle_state_keyboard.get() == 1:
+    def change_input_mode(self):
+        # Handle input mode change between keyboard and microphone
+        if self.input_mode.get() == "keyboard":
             # Change button text to reflect keyboard mode
             self.record_button.config(text="Start Typing ⌨️")
-            gui_handler.print_text("SYSTEM INFO: \nKeyboard Input Enabled - Type your message and press Enter\n\n", TEXT_COLOR_SETTINGS)
-        else:
+            gui_handler.print_text("SYSTEM INFO: \nInput Mode: Keyboard - Type your message and press Enter\n\n", TEXT_COLOR_SETTINGS)
+        else:  # microphone mode
             # If keyboard input mode was active, cancel it properly
             if self.keyboard_input_mode:
                 self.keyboard_input_mode = False
@@ -388,7 +401,7 @@ class GuiHandler:
                 
                 # Disable text field editing and add cancellation message
                 self.text_field.config(state="normal")
-                self.text_field.insert(tk.END, "\n[Keyboard mode disabled]\n\n", "tag_light_blue")
+                self.text_field.insert(tk.END, "\n[Switched to Microphone mode]\n\n", "tag_light_blue")
                 self.text_field.config(state="disabled")
                 
                 # Rebind original key handler to root
@@ -399,7 +412,7 @@ class GuiHandler:
                 # Change button text back to microphone mode
                 self.record_button.config(text="Start Recording 🎤")
             
-            gui_handler.print_text("SYSTEM INFO: \nKeyboard Input Disabled\n\n", TEXT_COLOR_SETTINGS)
+            gui_handler.print_text("SYSTEM INFO: \nInput Mode: Microphone\n\n", TEXT_COLOR_SETTINGS)
 
     def change_voice(self, voice):
         # Extract voice name from selection (remove "Voice = " prefix)
@@ -482,20 +495,45 @@ class GuiHandler:
         )
         toggle_button_two.pack(pady=6)
     
-    def create_toggle_button_keyboard(self):
-        # Create a variable to hold the state of the keyboard input toggle button
-        self.toggle_state_keyboard = tk.IntVar()
-        self.toggle_state_keyboard.set(0)  # Set the initial state to unchecked
+    def create_input_mode_radio_buttons(self):
+        # Create a variable to hold the input mode selection
+        self.input_mode = tk.StringVar()
+        self.input_mode.set("microphone")  # Set default to microphone
 
-        # Create a toggle button for keyboard input with modern style
-        toggle_button_keyboard = ttk.Checkbutton(
-            self.root, 
-            text="Use Keyboard Input", 
-            variable=self.toggle_state_keyboard, 
-            command=lambda: self.toggle_keyboard_input(),
-            style='Modern.TCheckbutton'
+        # Create a frame to hold the radio buttons (transparent background)
+        radio_frame = tk.Frame(self.root)
+        radio_frame.pack(pady=6)
+        
+        # Add label for the radio button group
+        mode_label = tk.Label(
+            radio_frame,
+            text="Input Mode:",
+            font=("Segoe UI", 10, "bold"),
+            foreground='#000000'
         )
-        toggle_button_keyboard.pack(pady=6)
+        mode_label.pack(side=tk.LEFT, padx=(0, 10))
+
+        # Create radio button for Microphone
+        microphone_radio = ttk.Radiobutton(
+            radio_frame,
+            text="🎤 Microphone",
+            variable=self.input_mode,
+            value="microphone",
+            command=self.change_input_mode,
+            style='Modern.TRadiobutton'
+        )
+        microphone_radio.pack(side=tk.LEFT, padx=5)
+
+        # Create radio button for Keyboard
+        keyboard_radio = ttk.Radiobutton(
+            radio_frame,
+            text="⌨️ Keyboard",
+            variable=self.input_mode,
+            value="keyboard",
+            command=self.change_input_mode,
+            style='Modern.TRadiobutton'
+        )
+        keyboard_radio.pack(side=tk.LEFT, padx=5)
 
     def create_voice_dropdown(self):
         # Create a variable to hold the selected value
