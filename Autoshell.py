@@ -1,3 +1,7 @@
+#-------------------------------------------------------
+# Imports
+#-------------------------------------------------------
+
 from openai import OpenAI
 import os
 import pyaudio
@@ -11,7 +15,10 @@ from tkinter import PhotoImage
 from tkinter import ttk
 import wave
 
-# a guided user interface
+#-------------------------------------------------------
+# Guided User Interface
+#-------------------------------------------------------
+
 class GuiHandler:
     def __init__(self):
         # Initialize the mixer module for playing sound
@@ -215,7 +222,10 @@ class GuiHandler:
         # Start the GUI event loop
         self.root.mainloop()   
 
-# recording user-sound to text and playing ai-text to sound
+#-------------------------------------------------------
+# Recording user-sound to text and playing ai-text to sound
+#-------------------------------------------------------
+
 class SoundHandler:
     def __init__(self):
         self.is_recording = False
@@ -369,7 +379,10 @@ class SoundHandler:
         record_audio("audio_record", seconds)
         return(speech_to_text("audio_record.wav"))
 
-# connection to powershell
+#-------------------------------------------------------
+# Connection to PowerShell
+#-------------------------------------------------------
+
 class ShellHandler:
     def __init__(self):
         # Use common PowerShell locations or search in PATH
@@ -455,7 +468,10 @@ class ShellHandler:
         # save the message stream
         PromptHandler.save_chat_history(prompt_handler.chat_history)
 
-# connection to Open AI API
+#-------------------------------------------------------
+# Connection to Open AI API
+#-------------------------------------------------------
+
 class OpenAiHandler:
 
     def __init__(self):
@@ -502,7 +518,10 @@ class OpenAiHandler:
         response_message = response.choices[0].message.content 
         return response_message
 
-# transfer prompts between pipes
+#-------------------------------------------------------
+# Transfer prompts between pipes
+#-------------------------------------------------------
+
 class PromptHandler:
 
     def __init__(self):
@@ -694,6 +713,10 @@ class PromptHandler:
         encoding = tiktoken.get_encoding(encoding_name)
         num_tokens = len(encoding.encode(string))
         return num_tokens
+
+#-------------------------------------------------------
+# Main
+#-------------------------------------------------------
 
 def main():
     
