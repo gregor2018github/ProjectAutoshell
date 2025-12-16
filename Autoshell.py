@@ -65,6 +65,9 @@ class GuiHandler:
         # Create the main window
         root = tk.Tk()
         root.title("Autoshell")
+        
+        # Configure modern styling
+        self.setup_modern_style(root)
         # check the size of the current screen
         width = root.winfo_screenwidth()
         height = root.winfo_screenheight()
@@ -104,6 +107,60 @@ class GuiHandler:
 
         # bind the key listening function to the gui
         self.root.bind("<Key>", self.key_pressed)
+    
+    def setup_modern_style(self, root):
+        """Configure modern flat styling for ttk widgets"""
+        style = ttk.Style(root)
+        
+        # Use clam theme as base (more customizable)
+        style.theme_use('clam')
+        
+        # Modern color palette
+        self.colors = {
+            'bg': '#2b2b2b',
+            'fg': '#e0e0e0',
+            'accent': '#4a9eff',
+            'accent_hover': '#6bb3ff',
+            'button_bg': '#3d3d3d',
+            'button_hover': '#4a4a4a',
+            'checkbox_bg': '#363636',
+        }
+        
+        # Style for Checkbuttons (toggle buttons)
+        style.configure('Modern.TCheckbutton',
+            background='#c0c0c0',
+            foreground='#1a1a1a',
+            font=('Segoe UI', 10),
+            padding=(10, 8),
+            focuscolor='none'
+        )
+        style.map('Modern.TCheckbutton',
+            background=[('active', '#d0d0d0'), ('selected', '#c0c0c0')],
+            foreground=[('active', '#1a1a1a'), ('selected', '#1a1a1a')]
+        )
+        
+        # Style for OptionMenu (dropdown)
+        style.configure('Modern.TMenubutton',
+            background='#3d3d3d',
+            foreground='#e0e0e0',
+            font=('Segoe UI', 10),
+            padding=(12, 8),
+            borderwidth=0,
+            relief='flat',
+            arrowcolor='#e0e0e0'
+        )
+        style.map('Modern.TMenubutton',
+            background=[('active', '#4a4a4a')],
+            foreground=[('active', '#ffffff')]
+        )
+        
+        # Style for Scrollbar
+        style.configure('Modern.Vertical.TScrollbar',
+            background='#3d3d3d',
+            troughcolor='#2b2b2b',
+            borderwidth=0,
+            arrowcolor='#808080'
+        )
 
     def play_sound(self, file_name):
         os.chdir(self.files_path)
@@ -183,8 +240,13 @@ class GuiHandler:
         # Store the position where user input starts
         self.keyboard_input_start = self.text_field.index(tk.END)
         
-        # Bind keyboard events for typing
-        self.root.bind("<Key>", self.handle_keyboard_input)
+        # Set focus to text field to capture all key events
+        self.text_field.focus_set()
+        
+        # Bind keyboard events for typing - bind to text_field directly
+        self.text_field.bind("<Key>", self.handle_keyboard_input)
+        # Also bind space explicitly to prevent checkbox toggling
+        self.text_field.bind("<space>", self.handle_keyboard_input)
     
     def handle_keyboard_input(self, event):
         """Handle keyboard input when in keyboard input mode"""
@@ -215,8 +277,15 @@ class GuiHandler:
             self.cancel_keyboard_input()
             return "break"
         
-        # Handle regular character input
-        if event.char and event.char.isprintable():
+        # Handle space key explicitly
+        if event.keysym == "space":
+            self.keyboard_input_buffer += " "
+            self.text_field.insert(tk.END, " ", "tag_white")
+            self.text_field.see(tk.END)
+            return "break"
+        
+        # Handle regular character input (excluding special keys)
+        if event.char and event.char.isprintable() and len(event.char) == 1:
             self.keyboard_input_buffer += event.char
             self.text_field.insert(tk.END, event.char, "tag_white")
             self.text_field.see(tk.END)
@@ -233,13 +302,19 @@ class GuiHandler:
         self.keyboard_input_buffer = ""
         self.record_button.config(text="Start Recording 🎤")
         
+        # Unbind keyboard events from text field
+        self.text_field.unbind("<Key>")
+        self.text_field.unbind("<space>")
+        
         # Disable text field editing
         self.text_field.config(state="normal")
         self.text_field.insert(tk.END, "\n\n", "tag_white")
         self.text_field.config(state="disabled")
         
-        # Rebind original key handler
+        # Rebind original key handler to root
         self.root.bind("<Key>", self.key_pressed)
+        # Return focus to root
+        self.root.focus_set()
         
         if not user_input:
             gui_handler.print_text("SYSTEM INFO: \nEmpty input, please try again.\n\n", TEXT_COLOR_SETTINGS)
@@ -260,13 +335,19 @@ class GuiHandler:
         self.keyboard_input_buffer = ""
         self.record_button.config(text="Start Recording 🎤")
         
+        # Unbind keyboard events from text field
+        self.text_field.unbind("<Key>")
+        self.text_field.unbind("<space>")
+        
         # Disable text field editing and add cancellation message
         self.text_field.config(state="normal")
         self.text_field.insert(tk.END, "\n[Cancelled]\n\n", "tag_light_blue")
         self.text_field.config(state="disabled")
         
-        # Rebind original key handler
+        # Rebind original key handler to root
         self.root.bind("<Key>", self.key_pressed)
+        # Return focus to root
+        self.root.focus_set()
         
         gui_handler.print_text("SYSTEM INFO: \nKeyboard input cancelled.\n\n", TEXT_COLOR_SETTINGS)
 
@@ -291,8 +372,33 @@ class GuiHandler:
     def toggle_keyboard_input(self):
         # toggle keyboard input mode
         if self.toggle_state_keyboard.get() == 1:
+            # Change button text to reflect keyboard mode
+            self.record_button.config(text="Start Typing ⌨️")
             gui_handler.print_text("SYSTEM INFO: \nKeyboard Input Enabled - Type your message and press Enter\n\n", TEXT_COLOR_SETTINGS)
         else:
+            # If keyboard input mode was active, cancel it properly
+            if self.keyboard_input_mode:
+                self.keyboard_input_mode = False
+                self.keyboard_input_buffer = ""
+                self.record_button.config(text="Start Recording 🎤")
+                
+                # Unbind keyboard events from text field
+                self.text_field.unbind("<Key>")
+                self.text_field.unbind("<space>")
+                
+                # Disable text field editing and add cancellation message
+                self.text_field.config(state="normal")
+                self.text_field.insert(tk.END, "\n[Keyboard mode disabled]\n\n", "tag_light_blue")
+                self.text_field.config(state="disabled")
+                
+                # Rebind original key handler to root
+                self.root.bind("<Key>", self.key_pressed)
+                # Return focus to root
+                self.root.focus_set()
+            else:
+                # Change button text back to microphone mode
+                self.record_button.config(text="Start Recording 🎤")
+            
             gui_handler.print_text("SYSTEM INFO: \nKeyboard Input Disabled\n\n", TEXT_COLOR_SETTINGS)
 
     def change_voice(self, voice):
@@ -322,62 +428,127 @@ class GuiHandler:
         # Create a button that will start or stop the recording
         # Initialize the state to 'start'
         self.record_state = 'start'
-        self.record_button = tk.Button(self.root, text="Start Recording🎤", command=self.toggle_record, width=20, height=2, font=("Helvetica", 15), foreground= '#353535', background = "light grey")
-        self.record_button.pack(pady=10)
+        self.record_button = tk.Button(
+            self.root, 
+            text="Start Recording 🎤", 
+            command=self.toggle_record, 
+            width=18, 
+            height=1,
+            font=("Segoe UI", 13, "bold"),
+            foreground='#ffffff',
+            background='#4a9eff',
+            activeforeground='#ffffff',
+            activebackground='#6bb3ff',
+            relief='flat',
+            cursor='hand2',
+            bd=0,
+            highlightthickness=0,
+            padx=20,
+            pady=12
+        )
+        self.record_button.pack(pady=20)
+        
+        # Add hover effects
+        self.record_button.bind('<Enter>', lambda e: self.record_button.config(background='#6bb3ff'))
+        self.record_button.bind('<Leave>', lambda e: self.record_button.config(background='#4a9eff'))
     
     def create_toggle_button(self):
         # Create a variable to hold the state of the toggle button
         self.toggle_state = tk.IntVar()
         self.toggle_state.set(0)  # Set the initial state to unchecked
         
-        # Create a toggle button
-        toggle_button = ttk.Checkbutton(self.root, text="Direct Code Execution", variable=self.toggle_state, command=lambda: self.toggle_execution())
-        toggle_button.pack(pady=10)
+        # Create a toggle button with modern style
+        toggle_button = ttk.Checkbutton(
+            self.root, 
+            text="Direct Code Execution", 
+            variable=self.toggle_state, 
+            command=lambda: self.toggle_execution(),
+            style='Modern.TCheckbutton'
+        )
+        toggle_button.pack(pady=6)
 
     def create_toogle_button_two(self):
         # Create a variable to hold the state of the toggle button
         self.toggle_state_two = tk.IntVar()
         self.toggle_state_two.set(0)  # Set the initial state to unchecked
 
-        # Create a toggle button
-        toggle_button_two = ttk.Checkbutton(self.root, text="Follow-Up Questions", variable=self.toggle_state_two, command=lambda: self.toggle_execution_two())
-        toggle_button_two.pack(pady=0)
+        # Create a toggle button with modern style
+        toggle_button_two = ttk.Checkbutton(
+            self.root, 
+            text="Follow-Up Questions", 
+            variable=self.toggle_state_two, 
+            command=lambda: self.toggle_execution_two(),
+            style='Modern.TCheckbutton'
+        )
+        toggle_button_two.pack(pady=6)
     
     def create_toggle_button_keyboard(self):
         # Create a variable to hold the state of the keyboard input toggle button
         self.toggle_state_keyboard = tk.IntVar()
         self.toggle_state_keyboard.set(0)  # Set the initial state to unchecked
 
-        # Create a toggle button for keyboard input
-        toggle_button_keyboard = ttk.Checkbutton(self.root, text="Use Keyboard Input", variable=self.toggle_state_keyboard, command=lambda: self.toggle_keyboard_input())
-        toggle_button_keyboard.pack(pady=0)
+        # Create a toggle button for keyboard input with modern style
+        toggle_button_keyboard = ttk.Checkbutton(
+            self.root, 
+            text="Use Keyboard Input", 
+            variable=self.toggle_state_keyboard, 
+            command=lambda: self.toggle_keyboard_input(),
+            style='Modern.TCheckbutton'
+        )
+        toggle_button_keyboard.pack(pady=6)
 
     def create_voice_dropdown(self):
         # Create a variable to hold the selected value
         self.voice = tk.StringVar()
         self.voice.set("onyx")
 
-        # Create a dropdown
-        voice_dropdown = ttk.OptionMenu(self.root, self.voice, "Voice = Onyx", "Voice = Onyx", "Voice = Alloy", "Voice = Echo", "Voice = Fable", "Voice = Nova", "Voice = Shimmer", command=lambda x: self.change_voice(x))
-        voice_dropdown.pack(pady=5)
+        # Create a dropdown with modern style
+        voice_dropdown = ttk.OptionMenu(
+            self.root, 
+            self.voice, 
+            "Voice = Onyx", 
+            "Voice = Onyx", 
+            "Voice = Alloy", 
+            "Voice = Echo", 
+            "Voice = Fable", 
+            "Voice = Nova", 
+            "Voice = Shimmer", 
+            command=lambda x: self.change_voice(x),
+            style='Modern.TMenubutton'
+        )
+        voice_dropdown.pack(pady=12)
 
     def create_text_window(self):
-        # Create a Scrollbar
-        scrollbar = ttk.Scrollbar(self.root)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Create a Scrollbar with modern style
+        scrollbar = ttk.Scrollbar(self.root, style='Modern.Vertical.TScrollbar')
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=20)
 
-        # Create a Text widget
-        self.text_field = tk.Text(self.root, wrap=tk.WORD, yscrollcommand=scrollbar.set)
-        self.text_field.pack(padx=35, pady=35, fill=tk.BOTH, expand=True)
+        # Create a Text widget with modern styling
+        self.text_field = tk.Text(
+            self.root, 
+            wrap=tk.WORD, 
+            yscrollcommand=scrollbar.set,
+            font=('Consolas', 11),
+            relief='flat',
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground='#3d3d3d',
+            highlightcolor='#4a9eff',
+            insertbackground='#ffffff',
+            selectbackground='#4a9eff',
+            selectforeground='#ffffff'
+        )
+        self.text_field.pack(padx=25, pady=(15, 25), fill=tk.BOTH, expand=True)
 
-        self.text_field.tag_config("tag_green", foreground="green")
-        self.text_field.tag_config("tag_red", foreground="red")
-        self.text_field.tag_config("tag_white", foreground="white")
-        self.text_field.tag_config("tag_blue", foreground="blue")
-        self.text_field.tag_config("tag_light_blue", foreground="#ADD8E6")
+        # Configure text colors with modern palette
+        self.text_field.tag_config("tag_green", foreground="#50fa7b")
+        self.text_field.tag_config("tag_red", foreground="#ff5555")
+        self.text_field.tag_config("tag_white", foreground="#f8f8f2")
+        self.text_field.tag_config("tag_blue", foreground="#8be9fd")
+        self.text_field.tag_config("tag_light_blue", foreground="#8be9fd")
 
-        # make background color of the text field black
-        self.text_field.config(background="black")
+        # Modern dark background for the text field
+        self.text_field.config(background="#1e1e1e")
 
         # Make the Text widget read-only
         self.text_field.config(state="disabled")
