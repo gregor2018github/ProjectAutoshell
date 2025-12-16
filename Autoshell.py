@@ -23,6 +23,8 @@ import wave
 BACKGROUND_IMAGE = "background_image2.png"
 TEXT_COLOR_USER = "white"
 TEXT_COLOR_SETTINGS = "light_blue"
+TEXT_COLOR_AI = "white"
+TEXT_COLOR_AI_PROPOSAL = "green"
 
 # Sound Stuff
 SOUND_CHUNK = 1024
@@ -637,7 +639,7 @@ class PromptHandler:
 
             PromptHandler.add_to_chat_history(clean_message, "assistant")
             
-            gui_handler.print_text(f"AI TO USER: \n{clean_message}\n\n", "white") 
+            gui_handler.print_text(f"AI TO USER: \n{clean_message}\n\n", TEXT_COLOR_AI) 
 
             SoundHandler.text_to_speech(clean_message, openai_handler.OpenAiClient, sound_handler.voice_agent)
 
@@ -645,7 +647,7 @@ class PromptHandler:
             token_use = PromptHandler.num_tokens_from_string(str(prompt_handler.chat_history), 'cl100k_base') #cl100k_base #p50k_base
             prompt_handler.current_token_use = token_use
             token_max = 16384
-            gui_handler.print_text(f"SYSTEM INFO: \nTokens used: {token_use} / {token_max} ({round(token_use/token_max*100, 2)} %)\n\n", "light_blue")
+            gui_handler.print_text(f"SYSTEM INFO: \nTokens used: {token_use} / {token_max} ({round(token_use/token_max*100, 2)} %)\n\n", TEXT_COLOR_SETTINGS)
 
             # save the message stream (here we are at the end of the conversation)
             PromptHandler.save_chat_history(prompt_handler.chat_history)
@@ -653,7 +655,7 @@ class PromptHandler:
             # if there are too many tokens used, then reset the chat history forcefully and let the user know
             if token_use > token_max-2000:
                 prompt_handler.chat_history = PromptHandler.reset_chat_history()
-                gui_handler.print_text(f"SYSTEM INFO: \nMaximum number of tokens reached, chat history reset.\n\n", "light_blue")
+                gui_handler.print_text(f"SYSTEM INFO: \nMaximum number of tokens reached, chat history reset.\n\n", TEXT_COLOR_SETTINGS)
                 
 
         # if the ai response is a command, forward it to the shell handler
@@ -661,8 +663,8 @@ class PromptHandler:
             # check if prompt handler is in "Ask Before Execution" mode
             if prompt_handler.ask_for_execution:
                 #gui
-                gui_handler.print_text(f"AI PROPOSAL: \n{response_message}\n\n", "green")
-                gui_handler.print_text("SYSTEM INFO: \nLet through? (y/n): \n", "light_blue")
+                gui_handler.print_text(f"AI PROPOSAL: \n{response_message}\n\n", TEXT_COLOR_AI_PROPOSAL)
+                gui_handler.print_text("SYSTEM INFO: \nLet through? (y/n): \n", TEXT_COLOR_SETTINGS)
                 
                 # define a function that listens to the keys of the UI, this function is run in a thread
                 # It felt clunky and hacky but it works
@@ -691,7 +693,7 @@ class PromptHandler:
                         # give power shell answer back to the ai (this could create a loop)
                         response_message = OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
                     else:
-                        gui_handler.print_text("SYSTEM INFO: \nShell execution blocked by user due to security issues.\n\n", "light_blue")
+                        gui_handler.print_text("SYSTEM INFO: \nShell execution blocked by user due to security issues.\n\n", TEXT_COLOR_SETTINGS)
                         PromptHandler.add_to_chat_history(response_message, "assistant")
                         # save the message stream (here we are at the end of the conversation)
                         PromptHandler.save_chat_history(prompt_handler.chat_history)
@@ -701,7 +703,7 @@ class PromptHandler:
                 threading.Thread(target=listen_to_keys).start()
 
             else:  # if not in ask for execution mode - forward everything to the shell
-                gui_handler.print_text(f"AI CODE: \n{response_message}\n\n", "green") 
+                gui_handler.print_text(f"AI CODE: \n{response_message}\n\n", TEXT_COLOR_AI) 
                 PromptHandler.add_to_chat_history(response_message, "assistant")
                 shell_handler.execute(response_message)
                 
@@ -709,9 +711,9 @@ class PromptHandler:
                 response_message = OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
 
         elif answer_type == "empty": # if the ai response is none, then do nothing
-            gui_handler.print_text(f"SYSTEM INFO: \nModel created empty reply message for the user.\n\n", "light_blue")
+            gui_handler.print_text(f"SYSTEM INFO: \nModel created empty reply message for the user.\n\n", TEXT_COLOR_SETTINGS)
         else: # if the ai response is neither, then print a warning
-            gui_handler.print_text(f"SYSTEM INFO: \nDebug Warning: The forwarding decision is neither 'shell' nor 'user' but {answer_type}.\n\n", "light_blue")
+            gui_handler.print_text(f"SYSTEM INFO: \nDebug Warning: The forwarding decision is neither 'shell' nor 'user' but {answer_type}.\n\n", TEXT_COLOR_SETTINGS)
 
     
     # save current message stream to a txt file, give it the current date and time as name
