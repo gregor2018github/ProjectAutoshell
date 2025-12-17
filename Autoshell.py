@@ -39,14 +39,14 @@ MAX_TOKENS_SHELL_ANSWER = 1000
 
 # OpenAI Stuff
 OPEN_AI_API_KEY_ENV_VARIABLE = "OPENAI_API_KEY"
-LARGE_LANGUAGE_MODEL = "gpt-3.5-turbo-16k"
-MODEL_TEMPERATURE = 1.01
+LARGE_LANGUAGE_MODEL = "gpt-5-mini" # "gpt-3.5-turbo-16k", "gpt-5-mini", 
+MODEL_TEMPERATURE = 1 # 1.1 with gpt-3.5-turbo-16k
 MODEL_MAX_TOKENS = 1000
 MODEL_TOP_P = 1
 MODEL_FREQUENCY_PENALTY = 0
 MODEL_PRESENCE_PENALTY = 0
-LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION = "gpt-3.5-turbo"
-FORWARDING_MODEL_TEMPERATURE = 0.5
+LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION = "gpt-5-mini" # "gpt-3.5-turbo"
+FORWARDING_MODEL_TEMPERATURE = 1 # 0.5 with gpt-3.5-turbo
 FORWARDING_MODEL_MAX_TOKENS = 5
 FORWARDING_MODEL_TOP_P = 1
 FORWARDING_MODEL_FREQUENCY_PENALTY = 0
@@ -857,7 +857,7 @@ class OpenAiHandler:
         model=LARGE_LANGUAGE_MODEL, #gpt-3.5-turbo-1106 ; gpt-3.5-turbo-16k ; gpt-3.5-turbo
         messages=chat_history,
         temperature=MODEL_TEMPERATURE,
-        max_tokens=MODEL_MAX_TOKENS,
+        max_completion_tokens=MODEL_MAX_TOKENS,
         top_p=MODEL_TOP_P,
         frequency_penalty=MODEL_FREQUENCY_PENALTY,
         presence_penalty=MODEL_PRESENCE_PENALTY
@@ -880,7 +880,7 @@ class OpenAiHandler:
         model=LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION, #gpt-3.5-turbo-1106 ; gpt-3.5-turbo-16k ; gpt-3.5-turbo
         messages=forwarding_chat_history,
         temperature=FORWARDING_MODEL_TEMPERATURE,
-        max_tokens=FORWARDING_MODEL_MAX_TOKENS,
+        max_completion_tokens=FORWARDING_MODEL_MAX_TOKENS,
         top_p=FORWARDING_MODEL_TOP_P,
         frequency_penalty=FORWARDING_MODEL_FREQUENCY_PENALTY,
         presence_penalty=FORWARDING_MODEL_PRESENCE_PENALTY
