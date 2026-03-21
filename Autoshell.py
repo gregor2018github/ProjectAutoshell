@@ -121,6 +121,7 @@ class GuiHandler:
         # Keyboard input mode variables
         self.keyboard_input_mode = False
         self.keyboard_input_buffer = ""
+        self.last_was_system_info = False
 
         # create two paths, the main path and the subdirectory path for files
         self.main_path = os.getcwd()
@@ -200,14 +201,42 @@ class GuiHandler:
             return
 
         self.text_field.config(state="normal")
-        self.text_field.insert(tk.END, text, f"tag_{color}")
-        
+
+        # Merge consecutive SYSTEM INFO messages under one header
+        is_system_info = text.startswith("SYSTEM INFO: \n") and color == TEXT_COLOR_SETTINGS
+        merge_system_info = is_system_info and self.last_was_system_info
+        if merge_system_info:
+            # Strip "SYSTEM INFO: \n" header — reuse the previous one
+            text = text[len("SYSTEM INFO: \n"):]
+        self.last_was_system_info = is_system_info
+
+        if self.keyboard_input_mode:
+            # Remove the "USER: <typed text>" block, append the system message,
+            # then redraw the input block at the new bottom.
+            if "keyboard_line_start" in self.text_field.mark_names():
+                self.text_field.delete("keyboard_line_start", tk.END)
+            # Now strip trailing blank line if merging (after keyboard block is removed)
+            if merge_system_info:
+                if self.text_field.get("end-2c") == "\n" and self.text_field.get("end-3c") == "\n":
+                    self.text_field.delete("end-2c")
+            self.text_field.insert(tk.END, text, f"tag_{color}")
+            self._redraw_keyboard_prompt()
+            # Re-focus so the blinking cursor stays in the text field
+            self.text_field.focus_set()
+        else:
+            # Strip trailing blank line if merging
+            if merge_system_info:
+                if self.text_field.get("end-2c") == "\n" and self.text_field.get("end-3c") == "\n":
+                    self.text_field.delete("end-2c")
+            self.text_field.insert(tk.END, text, f"tag_{color}")
+
         # refresh the text field
         self.text_field.update_idletasks()
         self.text_field.see(tk.END)
 
-        # remove reactivity of the text field so that the user can not edit it
-        self.text_field.config(state="disabled")
+        # Keep text field editable during keyboard input, otherwise disable it
+        if not self.keyboard_input_mode:
+            self.text_field.config(state="disabled")
 
     def toggle_record(self):
         # Toggle the recording state (microphone mode)
@@ -253,23 +282,34 @@ class GuiHandler:
         self.keyboard_input_mode = True
         self.keyboard_input_buffer = ""
         self.record_button.config(text="Type & Press Enter")
-        
+
         # Enable the text field for input and show prompt
         self.text_field.config(state="normal")
-        self.text_field.insert(tk.END, "USER: \n", "tag_white")
-        self.text_field.see(tk.END)
-
-        # Store the position where user input starts
-        self.keyboard_input_start = self.text_field.index(tk.END)
+        self._redraw_keyboard_prompt()
 
         # Set focus to text field to capture all key events
         self.text_field.focus_set()
-        
+
         # Bind keyboard events for typing - bind to text_field directly
         self.text_field.bind("<Key>", self.handle_keyboard_input)
         # Also bind space explicitly to prevent checkbox toggling
         self.text_field.bind("<space>", self.handle_keyboard_input)
-    
+
+    def _redraw_keyboard_prompt(self):
+        """Draw the 'USER: <typed text>' block at the current end of the text field
+        and place a mark so it can be cleanly removed later."""
+        self.text_field.config(state="normal")
+        # Place mark where the new input block starts
+        self.text_field.mark_set("keyboard_line_start", "end-1c")
+        self.text_field.mark_gravity("keyboard_line_start", "left")
+        # Insert "USER: " + whatever the user has typed so far
+        self.text_field.insert(tk.END, "USER: \n", "tag_white")
+        if self.keyboard_input_buffer:
+            self.text_field.insert(tk.END, self.keyboard_input_buffer, "tag_white")
+        # Place the text cursor at the very end so the blinking caret is visible
+        self.text_field.mark_set(tk.INSERT, tk.END)
+        self.text_field.see(tk.END)
+
     def handle_keyboard_input(self, event):
         """Handle keyboard input when in keyboard input mode"""
         # If not in keyboard input mode but listen_to_keys is active (for y/n prompts), use the original handler
