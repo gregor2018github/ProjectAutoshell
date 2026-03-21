@@ -429,9 +429,10 @@ class GuiHandler:
                 self.text_field.unbind("<Key>")
                 self.text_field.unbind("<space>")
 
-                # Disable text field editing and add cancellation message
+                # Remove the empty "USER:" prompt line if nothing was typed
                 self.text_field.config(state="normal")
-                self.text_field.insert(tk.END, "\n[Switched to Microphone mode]\n\n", "tag_light_blue")
+                if "keyboard_line_start" in self.text_field.mark_names():
+                    self.text_field.delete("keyboard_line_start", tk.END)
                 self.text_field.config(state="disabled")
 
                 # Rebind original key handler to root
