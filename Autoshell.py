@@ -39,13 +39,13 @@ MAX_TOKENS_SHELL_ANSWER = 1000
 
 # OpenAI Stuff
 OPEN_AI_API_KEY_ENV_VARIABLE = "OPENAI_API_KEY"
-LARGE_LANGUAGE_MODEL = "gpt-5-mini" # "gpt-3.5-turbo-16k", "gpt-5-mini", "gpt-realtime"
+LARGE_LANGUAGE_MODEL = "gpt-5.4-nano" # "gpt-3.5-turbo-16k", "gpt-5-mini", "gpt-realtime"
 MODEL_TEMPERATURE = 1 # 1.1 with gpt-3.5-turbo-16k
 MODEL_MAX_TOKENS = 1000
 MODEL_TOP_P = 1
 MODEL_FREQUENCY_PENALTY = 0
 MODEL_PRESENCE_PENALTY = 0
-LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION = "gpt-5-mini" # "gpt-3.5-turbo", "gpt-realtime"
+LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION = "gpt-5.4-nano" # "gpt-3.5-turbo", "gpt-realtime"
 FORWARDING_MODEL_TEMPERATURE = 1 # 0.5 with gpt-3.5-turbo
 FORWARDING_MODEL_MAX_TOKENS = 5
 FORWARDING_MODEL_TOP_P = 1
@@ -94,7 +94,9 @@ class GuiHandler:
         self.create_toogle_button_two()
         self.create_input_mode_radio_buttons()
         self.create_voice_dropdown()
+        self.create_debug_toggle_button()
         self.create_text_window()
+        self.create_debug_panel()
 
         # Keyboard input mode variables
         self.keyboard_input_mode = False
@@ -176,19 +178,24 @@ class GuiHandler:
         )
 
     def play_sound(self, file_name):
-        os.chdir(self.files_path)
-        # make a copy of the file so that it can be overwritten
-        mixer.music.load(file_name)  # Load the sound file
-        mixer.music.play()  # Play the sound file
-        # wait until the sound is finished playing
+        self.debug_log("Playing audio...")
+        t = time.time()
+        full_path = os.path.join(self.files_path, file_name)
+        dummy_path = os.path.join(self.files_path, "audio_dummy.wav")
+        mixer.music.load(full_path)
+        mixer.music.play()
         while mixer.music.get_busy():
-            pass
+            time.sleep(0.1)
         # load a dummy file so that the "generated_audio.mp3" can be overwritten and be used again
-        mixer.music.load("audio_dummy.wav")
-        os.chdir(self.main_path)
+        mixer.music.load(dummy_path)
+        self.debug_log(f"Audio playback done ({time.time()-t:.2f}s)")
     
     def print_text(self, text, color):
-        
+        # If called from a background thread, reschedule on the main thread
+        if threading.current_thread() is not threading.main_thread():
+            self.root.after(0, self.print_text, text, color)
+            return
+
         self.text_field.config(state="normal")
         self.text_field.insert(tk.END, text, f"tag_{color}")
         
@@ -231,13 +238,9 @@ class GuiHandler:
         if not prompt_handler.follow_up_questions:
             prompt_handler.chat_history = PromptHandler.reset_chat_history()
 
-        # use speech to text method to get the text from the recorded audio
-        user_input = SoundHandler.speech_to_text("audio_record.wav", openai_handler.OpenAiClient)
-
-        # print user input to gui, then generate ai response
-        gui_handler.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
-        PromptHandler.add_to_chat_history(user_input, "user")
-        OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
+        # Disable button and run pipeline on background thread
+        self.record_button.config(state="disabled")
+        threading.Thread(target=self._run_pipeline, kwargs={"from_speech": True}, daemon=True).start()
 
     def start_keyboard_input(self):
         """Start keyboard input mode - allows user to type their message"""
@@ -332,15 +335,14 @@ class GuiHandler:
         if not user_input:
             gui_handler.print_text("SYSTEM INFO: \nEmpty input, please try again.\n\n", TEXT_COLOR_SETTINGS)
             return
-        
+
         # if follow up questions are enabled, then do not reset the chat history
         if not prompt_handler.follow_up_questions:
             prompt_handler.chat_history = PromptHandler.reset_chat_history()
-        
-        # Process the input same as voice input
-        gui_handler.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
-        PromptHandler.add_to_chat_history(user_input, "user")
-        OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
+
+        # Disable button and run pipeline on background thread
+        self.record_button.config(state="disabled")
+        threading.Thread(target=self._run_pipeline, args=(user_input,), daemon=True).start()
     
     def cancel_keyboard_input(self):
         """Cancel keyboard input mode"""
@@ -425,9 +427,7 @@ class GuiHandler:
         gui_handler.print_text(f"SYSTEM INFO: \nVoice changed to {voice_name.capitalize()}.\n\n", TEXT_COLOR_SETTINGS)
         
         # Play a sample sound
-        os.chdir(gui_handler.files_path)
         gui_handler.play_sound(f"example_{voice_name}.mp3")
-        os.chdir(gui_handler.main_path)
 
     # define what happens when a key is pressed
     def key_pressed(self, event):
@@ -594,9 +594,96 @@ class GuiHandler:
         # Configure the Scrollbar to scroll the Text widget
         scrollbar.config(command=self.text_field.yview)
 
+    # ----- Debug Panel -----
+
+    def create_debug_toggle_button(self):
+        self.debug_toggle_state = tk.IntVar()
+        self.debug_toggle_state.set(0)
+
+        toggle_button = ttk.Checkbutton(
+            self.root,
+            text="Debug Panel",
+            variable=self.debug_toggle_state,
+            command=self.toggle_debug_panel,
+            style='Modern.TCheckbutton'
+        )
+        toggle_button.pack(pady=6)
+
+    def create_debug_panel(self):
+        self.debug_frame = tk.Frame(self.root, height=150)
+        self.debug_scrollbar = ttk.Scrollbar(self.debug_frame, style='Modern.Vertical.TScrollbar')
+        self.debug_text = tk.Text(
+            self.debug_frame,
+            wrap=tk.WORD,
+            yscrollcommand=self.debug_scrollbar.set,
+            font=('Consolas', 9),
+            relief='flat',
+            borderwidth=0,
+            highlightthickness=1,
+            highlightbackground='#3d3d3d',
+            highlightcolor='#ffa500',
+            background='#1a1a2e',
+            foreground='#ffa500',
+            insertbackground='#ffa500',
+            state='disabled'
+        )
+        self.debug_scrollbar.config(command=self.debug_text.yview)
+        self.debug_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.debug_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Panel starts hidden
+        self.debug_panel_visible = False
+
+    def toggle_debug_panel(self):
+        if self.debug_toggle_state.get() == 1:
+            self.debug_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=25, pady=(0, 10))
+            self.debug_panel_visible = True
+        else:
+            self.debug_frame.pack_forget()
+            self.debug_panel_visible = False
+
+    def debug_log(self, message):
+        """Thread-safe: schedules the actual write on the main thread."""
+        self.root.after(0, self._debug_log_impl, message)
+
+    def _debug_log_impl(self, message):
+        t = time.time()
+        ms = int((t % 1) * 1000)
+        timestamp = time.strftime("%H:%M:%S") + f".{ms:03d}"
+        line = f"[{timestamp}] {message}\n"
+        self.debug_text.config(state='normal')
+        self.debug_text.insert(tk.END, line)
+        self.debug_text.see(tk.END)
+        self.debug_text.config(state='disabled')
+
+    # ----- Pipeline (runs on background thread) -----
+
+    def _run_pipeline(self, user_input=None, from_speech=False):
+        """Runs the full request pipeline off the main thread."""
+        pipeline_start = time.time()
+        try:
+            self.debug_log("Pipeline started")
+
+            if from_speech:
+                user_input = SoundHandler.speech_to_text("audio_record.wav", openai_handler.OpenAiClient)
+
+            self.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
+            PromptHandler.add_to_chat_history(user_input, "user")
+
+            OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
+
+            self.debug_log(f"Pipeline finished. Total: {time.time()-pipeline_start:.2f}s")
+        except Exception as e:
+            self.debug_log(f"ERROR: {e}")
+            self.print_text(f"SYSTEM ERROR: \n{e}\n\n", TEXT_COLOR_POWER_SHELL)
+        finally:
+            self.root.after(0, self._pipeline_finished)
+
+    def _pipeline_finished(self):
+        self.record_button.config(state="normal")
+
     def start_gui(self):
         # Start the GUI event loop
-        self.root.mainloop()   
+        self.root.mainloop()
 
 #-------------------------------------------------------
 # Recording user-sound to text and playing ai-text to sound
@@ -652,21 +739,21 @@ class SoundHandler:
             return False  # Failed to start recording
 
     def stop_recording(self):
-        os.chdir(gui_handler.files_path)
         self.is_recording = False
         print("Recording completed.")
-        wf = wave.open(self.filename, "wb")
+        full_path = os.path.join(gui_handler.files_path, self.filename)
+        wf = wave.open(full_path, "wb")
         wf.setnchannels(self.channels)
         wf.setsampwidth(self.p.get_sample_size(self.FORMAT))
         wf.setframerate(self.sample_rate)
         wf.writeframes(b"".join(self.frames))
         wf.close()
         self.frames = []
-        os.chdir(gui_handler.main_path)
 
 
     def text_to_speech(text, client, voice_agent):
-        # go to file subdirectory
+        gui_handler.debug_log("Text-to-speech (TTS API)...")
+        t = time.time()
         speech_file_path = gui_handler.files_path + "/generated_audio.mp3"
         response = client.audio.speech.create(
             model=TTS_MODEL,
@@ -674,19 +761,20 @@ class SoundHandler:
             input=text
         )
         response.stream_to_file(speech_file_path)
+        gui_handler.debug_log(f"Text-to-speech done ({time.time()-t:.2f}s)")
         gui_handler.play_sound("generated_audio.mp3")
         #os.system("generated_audio.mp3")
     
     def speech_to_text(audio_file_path, client):
-        # change directory to subdirectory
-        os.chdir(gui_handler.files_path)
-        audio_file= open(audio_file_path, "rb")
+        gui_handler.debug_log("Speech-to-text (Whisper API)...")
+        t = time.time()
+        full_path = os.path.join(gui_handler.files_path, audio_file_path)
+        audio_file = open(full_path, "rb")
         transcript = client.audio.transcriptions.create(
-        model=SPEECH_TO_TEXT_MODEL, 
-        file=audio_file
+            model=SPEECH_TO_TEXT_MODEL,
+            file=audio_file
         )
-        # change directory back to main directory
-        os.chdir(gui_handler.main_path)
+        gui_handler.debug_log(f"Speech-to-text done ({time.time()-t:.2f}s)")
         return transcript.text
 
     # listen to the microphone for a given amount of seconds and return the text
@@ -815,8 +903,11 @@ class ShellHandler:
             f.write(shell_output)
 
     def execute(self, commands):
+        gui_handler.debug_log("Shell execution...")
+        t = time.time()
         self.send_shell_commands(commands)
         shell_output = self.catch_shell_output()
+        gui_handler.debug_log(f"Shell execution done ({time.time()-t:.2f}s)")
         self.save_to_file(shell_output, commands, "complete_command_history.txt")
 
         gui_handler.print_text(f"POWER SHELL: \n{shell_output}\n\n", TEXT_COLOR_POWER_SHELL) 
@@ -852,13 +943,15 @@ class OpenAiHandler:
         )
 
     def generate_AI_response(chat_history, client):
-        # use the streamlined chat completions call required by the newer models
+        gui_handler.debug_log(f"Chat completions ({LARGE_LANGUAGE_MODEL})...")
+        t = time.time()
         response = client.chat.completions.create(
             model=LARGE_LANGUAGE_MODEL,
             messages=chat_history
         )
 
-        response_message = response.choices[0].message.content 
+        response_message = response.choices[0].message.content
+        gui_handler.debug_log(f"Chat completions done ({time.time()-t:.2f}s)") 
 
         # check if the response is the same as the last one
         if response_message == prompt_handler.last_ai_response:
@@ -870,13 +963,15 @@ class OpenAiHandler:
         PromptHandler.forward_by_ai(response_message)
 
     def generate_forwarding_decision(forwarding_chat_history, client):
-        # lightweight call for routing decision via chat completions
+        gui_handler.debug_log(f"Forwarding decision ({LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION})...")
+        t = time.time()
         response = client.chat.completions.create(
             model=LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION,
             messages=forwarding_chat_history
         )
 
-        response_message = response.choices[0].message.content 
+        response_message = response.choices[0].message.content
+        gui_handler.debug_log(f"Forwarding decision = \"{response_message}\" ({time.time()-t:.2f}s)")
         return response_message
 
 #-------------------------------------------------------
@@ -902,20 +997,16 @@ class PromptHandler:
             }
         ]
 
-    def get_preprompt(): 
-        # load the preprompt from the external file
-        os.chdir(gui_handler.files_path)
-        with open("pre_prompt_shell.txt", "r") as f:
+    def get_preprompt():
+        full_path = os.path.join(gui_handler.files_path, "pre_prompt_shell.txt")
+        with open(full_path, "r") as f:
             preprompt = f.read()
-        os.chdir(gui_handler.main_path)
         return preprompt
-    
+
     def get_forwarding_prompt():
-        # load the forwarding prompt from the external file
-        os.chdir(gui_handler.files_path)
-        with open("pre_prompt_forwarder.txt", "r") as f:
+        full_path = os.path.join(gui_handler.files_path, "pre_prompt_forwarder.txt")
+        with open(full_path, "r") as f:
             forwarding_prompt = f.read()
-        os.chdir(gui_handler.main_path)
         return forwarding_prompt
 
     def reset_chat_history():
@@ -995,41 +1086,30 @@ class PromptHandler:
                 gui_handler.print_text(f"AI PROPOSAL: \n{response_message}\n\n", TEXT_COLOR_AI_PROPOSAL)
                 gui_handler.print_text("SYSTEM INFO: \nLet through? (y/n): \n", TEXT_COLOR_SETTINGS)
                 
-                # define a function that listens to the keys of the UI, this function is run in a thread
-                # It felt clunky and hacky but it works
-                def listen_to_keys(response_message = response_message):
-                    prompt_handler.listen_to_keys = True
-                    prompt_handler.key_is_caught = False
-                    while prompt_handler.pressed_key is None and prompt_handler.key_is_caught is False:
-                        pass
-                    
-                    # save the key that was pressed
-                    key = prompt_handler.pressed_key
-                    prompt_handler.listen_to_keys = False
+                # Wait for user key press (already on background thread, so this won't freeze the UI)
+                gui_handler.debug_log("Waiting for user approval (y/n)...")
+                prompt_handler.listen_to_keys = True
+                prompt_handler.key_is_caught = False
+                while prompt_handler.pressed_key is None and prompt_handler.key_is_caught is False:
+                    time.sleep(0.1)
 
-                    user_decision = key
+                key = prompt_handler.pressed_key
+                prompt_handler.listen_to_keys = False
+                prompt_handler.pressed_key = None
+                prompt_handler.key_is_caught = False
 
-                    # reset the key-catch-helpers
-                    prompt_handler.pressed_key = None
-                    prompt_handler.key_is_caught = False
-                    prompt_handler.listen_to_keys = False
-                    
-                    # if y or Y or enter is pressed, then forward the message to the shell
-                    if user_decision == "y" or user_decision == "Y" or user_decision == "\r":
-                        PromptHandler.add_to_chat_history(response_message, "assistant")
-                        shell_handler.execute(response_message)
-                        
-                        # give power shell answer back to the ai (this could create a loop)
-                        response_message = OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
-                    else:
-                        gui_handler.print_text("SYSTEM INFO: \nShell execution blocked by user due to security issues.\n\n", TEXT_COLOR_SETTINGS)
-                        PromptHandler.add_to_chat_history(response_message, "assistant")
-                        # save the message stream (here we are at the end of the conversation)
-                        PromptHandler.save_chat_history(prompt_handler.chat_history)
+                if key == "y" or key == "Y" or key == "\r":
+                    gui_handler.debug_log("User approved shell execution")
+                    PromptHandler.add_to_chat_history(response_message, "assistant")
+                    shell_handler.execute(response_message)
 
-
-                # start a thread that listens to the keys
-                threading.Thread(target=listen_to_keys).start()
+                    # give power shell answer back to the ai (this could create a loop)
+                    OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
+                else:
+                    gui_handler.debug_log("User blocked shell execution")
+                    gui_handler.print_text("SYSTEM INFO: \nShell execution blocked by user due to security issues.\n\n", TEXT_COLOR_SETTINGS)
+                    PromptHandler.add_to_chat_history(response_message, "assistant")
+                    PromptHandler.save_chat_history(prompt_handler.chat_history)
 
             else:  # if not in ask for execution mode - forward everything to the shell
                 gui_handler.print_text(f"AI CODE: \n{response_message}\n\n", TEXT_COLOR_AI) 
