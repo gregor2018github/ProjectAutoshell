@@ -11,7 +11,6 @@ import threading
 import tiktoken
 import time
 import tkinter as tk
-from tkinter import PhotoImage
 from tkinter import ttk
 import wave
 
@@ -20,7 +19,6 @@ import wave
 #-------------------------------------------------------
 
 # UI Stuff
-BACKGROUND_IMAGE = "background_image2.png"
 TEXT_COLOR_USER = "white"
 TEXT_COLOR_SETTINGS = "light_blue"
 TEXT_COLOR_POWER_SHELL = "red"
@@ -61,41 +59,62 @@ class GuiHandler:
     def __init__(self):
         # Initialize the mixer module for playing sound
         mixer.init()
-        
+
+        # Color palette
+        self.colors = {
+            'bg_dark': '#1a1b26',
+            'bg_sidebar': '#24283b',
+            'bg_card': '#2f3347',
+            'bg_input': '#1a1b26',
+            'fg': '#c0caf5',
+            'fg_dim': '#565f89',
+            'fg_bright': '#e0e0e0',
+            'accent': '#7aa2f7',
+            'accent_hover': '#89b4fa',
+            'accent_active': '#5d87e0',
+            'green': '#9ece6a',
+            'red': '#f7768e',
+            'orange': '#ff9e64',
+            'cyan': '#7dcfff',
+            'border': '#3b4261',
+            'recording': '#f7768e',
+        }
+
         # Create the main window
         root = tk.Tk()
         root.title("Autoshell")
-        
+        root.configure(bg=self.colors['bg_dark'])
+
         # Configure modern styling
         self.setup_modern_style(root)
-        # check the size of the current screen
+
+        # Window size and position
         width = root.winfo_screenwidth()
         height = root.winfo_screenheight()
-        # make the window cover the whole screen
-        root.geometry("%dx%d" % (round(width/2,0), round(height/2,0)))
+        win_w = round(width * 0.55)
+        win_h = round(height * 0.6)
+        x = (width - win_w) // 2
+        y = (height - win_h) // 2
+        root.geometry(f"{win_w}x{win_h}+{x}+{y}")
+        root.minsize(800, 500)
 
-        # load it into the class
         self.root = root
 
-        # Load the image file
-        # file path is current path + /files + /background_image.png
-        picture_path = os.path.join(os.getcwd(), "files", BACKGROUND_IMAGE)
-        bg_image = PhotoImage(file=picture_path)
-        # Create a label with the image
-        bg_label = tk.Label(self.root, image=bg_image)
-        # Keep a reference to the image to prevent it from being garbage collected
-        bg_label.image = bg_image
-        # Place the label on the window
-        bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+        # --- Main layout: sidebar + content ---
+        self.main_frame = tk.Frame(root, bg=self.colors['bg_dark'])
+        self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # add elements to UI
-        self.create_start_stop_record_button()
-        self.create_toggle_button()
-        self.create_toogle_button_two()
-        self.create_input_mode_radio_buttons()
-        self.create_voice_dropdown()
-        self.create_speech_output_toggle_button()
-        self.create_debug_toggle_button()
+        # Sidebar
+        self.sidebar = tk.Frame(self.main_frame, bg=self.colors['bg_sidebar'], width=240)
+        self.sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        self.sidebar.pack_propagate(False)
+
+        # Content area
+        self.content = tk.Frame(self.main_frame, bg=self.colors['bg_dark'])
+        self.content.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Build sidebar and content
+        self.build_sidebar()
         self.create_text_window()
         self.create_debug_panel()
 
@@ -114,68 +133,51 @@ class GuiHandler:
     def setup_modern_style(self, root):
         """Configure modern flat styling for ttk widgets"""
         style = ttk.Style(root)
-        
-        # Use clam theme as base (more customizable)
         style.theme_use('clam')
-        
-        # Modern color palette
-        self.colors = {
-            'bg': '#2b2b2b',
-            'fg': '#e0e0e0',
-            'accent': '#4a9eff',
-            'accent_hover': '#6bb3ff',
-            'button_bg': '#3d3d3d',
-            'button_hover': '#4a4a4a',
-            'checkbox_bg': '#363636',
-        }
-        
-        # Style for Checkbuttons (toggle buttons)
-        style.configure('Modern.TCheckbutton',
-            background='#c0c0c0',
-            foreground='#1a1a1a',
-            font=('Segoe UI', 10),
-            padding=(10, 8),
-            focuscolor='none'
+        c = self.colors
+
+        # Checkbuttons
+        style.configure('Sidebar.TCheckbutton',
+            background=c['bg_sidebar'], foreground=c['fg'],
+            font=('Segoe UI', 9), padding=(8, 6), focuscolor='none',
+            indicatorcolor=c['bg_card'], indicatorrelief='flat'
         )
-        style.map('Modern.TCheckbutton',
-            background=[('active', '#d0d0d0'), ('selected', '#c0c0c0')],
-            foreground=[('active', '#1a1a1a'), ('selected', '#1a1a1a')]
+        style.map('Sidebar.TCheckbutton',
+            background=[('active', c['bg_card']), ('selected', c['bg_sidebar'])],
+            foreground=[('active', c['fg_bright']), ('selected', c['accent'])],
+            indicatorcolor=[('selected', c['accent'])]
         )
-        
-        # Style for Radiobuttons
-        style.configure('Modern.TRadiobutton',
-            background='#c0c0c0',
-            foreground='#1a1a1a',
-            font=('Segoe UI', 10),
-            padding=(10, 8),
-            focuscolor='none'
+
+        # Radiobuttons
+        style.configure('Sidebar.TRadiobutton',
+            background=c['bg_sidebar'], foreground=c['fg'],
+            font=('Segoe UI', 9), padding=(8, 4), focuscolor='none',
+            indicatorcolor=c['bg_card'], indicatorrelief='flat'
         )
-        style.map('Modern.TRadiobutton',
-            background=[('active', '#d0d0d0'), ('selected', '#c0c0c0')],
-            foreground=[('active', '#1a1a1a'), ('selected', '#1a1a1a')]
+        style.map('Sidebar.TRadiobutton',
+            background=[('active', c['bg_card']), ('selected', c['bg_sidebar'])],
+            foreground=[('active', c['fg_bright']), ('selected', c['accent'])],
+            indicatorcolor=[('selected', c['accent'])]
         )
-        
-        # Style for OptionMenu (dropdown)
-        style.configure('Modern.TMenubutton',
-            background='#3d3d3d',
-            foreground='#e0e0e0',
-            font=('Segoe UI', 10),
-            padding=(12, 8),
-            borderwidth=0,
-            relief='flat',
-            arrowcolor='#e0e0e0'
+
+        # Dropdown
+        style.configure('Sidebar.TMenubutton',
+            background=c['bg_card'], foreground=c['fg'],
+            font=('Segoe UI', 9), padding=(10, 6),
+            borderwidth=0, relief='flat', arrowcolor=c['fg_dim']
         )
-        style.map('Modern.TMenubutton',
-            background=[('active', '#4a4a4a')],
-            foreground=[('active', '#ffffff')]
+        style.map('Sidebar.TMenubutton',
+            background=[('active', c['border'])],
+            foreground=[('active', c['fg_bright'])]
         )
-        
-        # Style for Scrollbar
+
+        # Scrollbar
         style.configure('Modern.Vertical.TScrollbar',
-            background='#3d3d3d',
-            troughcolor='#2b2b2b',
-            borderwidth=0,
-            arrowcolor='#808080'
+            background=c['bg_card'], troughcolor=c['bg_dark'],
+            borderwidth=0, arrowcolor=c['fg_dim'], relief='flat'
+        )
+        style.map('Modern.Vertical.TScrollbar',
+            background=[('active', c['border'])]
         )
 
     def play_sound(self, file_name):
@@ -218,13 +220,23 @@ class GuiHandler:
         # Toggle the recording state (microphone mode)
         if self.record_state == 'start':
             if self.start_record():  # Check if recording started successfully
-                self.record_button.config(text="Stop Recording 🎤")
+                self.record_button.config(
+                    text="Stop Recording",
+                    bg=self.colors['recording'],
+                    activebackground=self.colors['red']
+                )
+                self.record_button.bind('<Enter>', lambda e: self.record_button.config(bg='#ff8fa3'))
+                self.record_button.bind('<Leave>', lambda e: self.record_button.config(bg=self.colors['recording']))
                 self.record_state = 'stop'
-            # Else, start_record failed; button and state remain 'start'. 
-            # Error message would have been printed by SoundHandler.
         else:
             self.stop_record()
-            self.record_button.config(text="Start Recording 🎤")
+            self.record_button.config(
+                text="Start Recording",
+                bg=self.colors['accent'],
+                activebackground=self.colors['accent_hover']
+            )
+            self.record_button.bind('<Enter>', lambda e: self.record_button.config(bg=self.colors['accent_hover']))
+            self.record_button.bind('<Leave>', lambda e: self.record_button.config(bg=self.colors['accent']))
             self.record_state = 'start'
 
     def start_record(self):
@@ -247,7 +259,7 @@ class GuiHandler:
         """Start keyboard input mode - allows user to type their message"""
         self.keyboard_input_mode = True
         self.keyboard_input_buffer = ""
-        self.record_button.config(text="Type & Press Enter ⌨️")
+        self.record_button.config(text="Type & Press Enter")
         
         # Enable the text field for input
         self.text_field.config(state="normal")
@@ -317,7 +329,7 @@ class GuiHandler:
         # Reset keyboard input mode
         self.keyboard_input_mode = False
         self.keyboard_input_buffer = ""
-        self.record_button.config(text="Start Recording 🎤")
+        self.record_button.config(text="Start Recording")
         
         # Unbind keyboard events from text field
         self.text_field.unbind("<Key>")
@@ -349,7 +361,7 @@ class GuiHandler:
         """Cancel keyboard input mode"""
         self.keyboard_input_mode = False
         self.keyboard_input_buffer = ""
-        self.record_button.config(text="Start Recording 🎤")
+        self.record_button.config(text="Start Recording")
         
         # Unbind keyboard events from text field
         self.text_field.unbind("<Key>")
@@ -397,14 +409,14 @@ class GuiHandler:
         # Handle input mode change between keyboard and microphone
         if self.input_mode.get() == "keyboard":
             # Change button text to reflect keyboard mode
-            self.record_button.config(text="Start Typing ⌨️")
+            self.record_button.config(text="Start Typing")
             gui_handler.print_text("SYSTEM INFO: \nInput Mode: Keyboard - Type your message and press Enter\n\n", TEXT_COLOR_SETTINGS)
         else:  # microphone mode
             # If keyboard input mode was active, cancel it properly
             if self.keyboard_input_mode:
                 self.keyboard_input_mode = False
                 self.keyboard_input_buffer = ""
-                self.record_button.config(text="Start Recording 🎤")
+                self.record_button.config(text="Start Recording")
                 
                 # Unbind keyboard events from text field
                 self.text_field.unbind("<Key>")
@@ -421,7 +433,7 @@ class GuiHandler:
                 self.root.focus_set()
             else:
                 # Change button text back to microphone mode
-                self.record_button.config(text="Start Recording 🎤")
+                self.record_button.config(text="Start Recording")
             
             gui_handler.print_text("SYSTEM INFO: \nInput Mode: Microphone\n\n", TEXT_COLOR_SETTINGS)
 
@@ -446,220 +458,158 @@ class GuiHandler:
             prompt_handler.pressed_key = character
             prompt_handler.key_is_caught= True
     
-    def create_start_stop_record_button(self):
-        # Create a button that will start or stop the recording
-        # Initialize the state to 'start'
+    def _sidebar_label(self, parent, text):
+        """Create a section label in the sidebar."""
+        tk.Label(
+            parent, text=text, font=('Segoe UI', 8, 'bold'),
+            fg=self.colors['fg_dim'], bg=self.colors['bg_sidebar'], anchor='w'
+        ).pack(fill=tk.X, padx=16, pady=(14, 4))
+
+    def _sidebar_separator(self, parent):
+        """Create a thin separator line in the sidebar."""
+        tk.Frame(parent, bg=self.colors['border'], height=1).pack(fill=tk.X, padx=16, pady=8)
+
+    def build_sidebar(self):
+        """Build all sidebar controls in a clean grouped layout."""
+        c = self.colors
+        sb = self.sidebar
+
+        # --- App title ---
+        title_frame = tk.Frame(sb, bg=c['bg_sidebar'])
+        title_frame.pack(fill=tk.X, padx=16, pady=(20, 4))
+        tk.Label(
+            title_frame, text="AUTOSHELL", font=('Segoe UI', 14, 'bold'),
+            fg=c['accent'], bg=c['bg_sidebar']
+        ).pack(anchor='w')
+        tk.Label(
+            title_frame, text="Voice-controlled AI assistant",
+            font=('Segoe UI', 8), fg=c['fg_dim'], bg=c['bg_sidebar']
+        ).pack(anchor='w')
+
+        self._sidebar_separator(sb)
+
+        # --- Record button ---
         self.record_state = 'start'
         self.record_button = tk.Button(
-            self.root, 
-            text="Start Recording 🎤", 
-            command=self.toggle_record, 
-            width=18, 
-            height=1,
-            font=("Segoe UI", 13, "bold"),
-            foreground='#ffffff',
-            background='#4a9eff',
-            activeforeground='#ffffff',
-            activebackground='#6bb3ff',
-            relief='flat',
-            cursor='hand2',
-            bd=0,
-            highlightthickness=0,
-            padx=20,
-            pady=12
+            sb, text="Start Recording", command=self.toggle_record,
+            font=('Segoe UI', 11, 'bold'), fg='#ffffff', bg=c['accent'],
+            activeforeground='#ffffff', activebackground=c['accent_hover'],
+            relief='flat', cursor='hand2', bd=0, highlightthickness=0,
+            padx=16, pady=10
         )
-        self.record_button.pack(pady=20)
-        
-        # Add hover effects
-        self.record_button.bind('<Enter>', lambda e: self.record_button.config(background='#6bb3ff'))
-        self.record_button.bind('<Leave>', lambda e: self.record_button.config(background='#4a9eff'))
-    
-    def create_toggle_button(self):
-        # Create a variable to hold the state of the toggle button
-        self.toggle_state = tk.IntVar()
-        self.toggle_state.set(0)  # Set the initial state to unchecked
-        
-        # Create a toggle button with modern style
-        toggle_button = ttk.Checkbutton(
-            self.root, 
-            text="Direct Code Execution", 
-            variable=self.toggle_state, 
-            command=lambda: self.toggle_execution(),
-            style='Modern.TCheckbutton'
-        )
-        toggle_button.pack(pady=6)
+        self.record_button.pack(fill=tk.X, padx=16, pady=(8, 4))
+        self.record_button.bind('<Enter>', lambda e: self.record_button.config(bg=c['accent_hover']))
+        self.record_button.bind('<Leave>', lambda e: self.record_button.config(bg=c['accent']))
 
-    def create_toogle_button_two(self):
-        # Create a variable to hold the state of the toggle button
-        self.toggle_state_two = tk.IntVar()
-        self.toggle_state_two.set(0)  # Set the initial state to unchecked
+        # --- Input mode ---
+        self._sidebar_label(sb, "INPUT MODE")
+        self.input_mode = tk.StringVar(value="microphone")
+        for text, val in [("Microphone", "microphone"), ("Keyboard", "keyboard")]:
+            ttk.Radiobutton(
+                sb, text=text, variable=self.input_mode, value=val,
+                command=self.change_input_mode, style='Sidebar.TRadiobutton'
+            ).pack(fill=tk.X, padx=16)
 
-        # Create a toggle button with modern style
-        toggle_button_two = ttk.Checkbutton(
-            self.root, 
-            text="Follow-Up Questions", 
-            variable=self.toggle_state_two, 
-            command=lambda: self.toggle_execution_two(),
-            style='Modern.TCheckbutton'
-        )
-        toggle_button_two.pack(pady=6)
-    
-    def create_speech_output_toggle_button(self):
-        # Create a variable to hold the state of the toggle button
-        self.speech_output_state = tk.IntVar()
-        self.speech_output_state.set(1)  # Speech output enabled by default
+        self._sidebar_separator(sb)
 
-        # Create a toggle button with modern style
-        speech_output_button = ttk.Checkbutton(
-            self.root,
-            text="Speech Output",
-            variable=self.speech_output_state,
-            command=lambda: self.toggle_speech_output(),
-            style='Modern.TCheckbutton'
-        )
-        speech_output_button.pack(pady=6)
+        # --- Settings toggles ---
+        self._sidebar_label(sb, "SETTINGS")
 
-    def create_input_mode_radio_buttons(self):
-        # Create a variable to hold the input mode selection
-        self.input_mode = tk.StringVar()
-        self.input_mode.set("microphone")  # Set default to microphone
+        self.toggle_state = tk.IntVar(value=0)
+        ttk.Checkbutton(
+            sb, text="Direct Code Execution", variable=self.toggle_state,
+            command=self.toggle_execution, style='Sidebar.TCheckbutton'
+        ).pack(fill=tk.X, padx=16)
 
-        # Create a frame to hold the radio buttons (transparent background)
-        radio_frame = tk.Frame(self.root)
-        radio_frame.pack(pady=6)
-        
-        # Add label for the radio button group
-        mode_label = tk.Label(
-            radio_frame,
-            text="Input Mode:",
-            font=("Segoe UI", 10, "bold"),
-            foreground='#000000'
-        )
-        mode_label.pack(side=tk.LEFT, padx=(0, 10))
+        self.toggle_state_two = tk.IntVar(value=0)
+        ttk.Checkbutton(
+            sb, text="Follow-Up Questions", variable=self.toggle_state_two,
+            command=self.toggle_execution_two, style='Sidebar.TCheckbutton'
+        ).pack(fill=tk.X, padx=16)
 
-        # Create radio button for Microphone
-        microphone_radio = ttk.Radiobutton(
-            radio_frame,
-            text="🎤 Microphone",
-            variable=self.input_mode,
-            value="microphone",
-            command=self.change_input_mode,
-            style='Modern.TRadiobutton'
-        )
-        microphone_radio.pack(side=tk.LEFT, padx=5)
+        self.speech_output_state = tk.IntVar(value=1)
+        ttk.Checkbutton(
+            sb, text="Speech Output", variable=self.speech_output_state,
+            command=self.toggle_speech_output, style='Sidebar.TCheckbutton'
+        ).pack(fill=tk.X, padx=16)
 
-        # Create radio button for Keyboard
-        keyboard_radio = ttk.Radiobutton(
-            radio_frame,
-            text="⌨️ Keyboard",
-            variable=self.input_mode,
-            value="keyboard",
-            command=self.change_input_mode,
-            style='Modern.TRadiobutton'
-        )
-        keyboard_radio.pack(side=tk.LEFT, padx=5)
+        self._sidebar_separator(sb)
 
-    def create_voice_dropdown(self):
-        # Create a variable to hold the selected value
-        self.voice = tk.StringVar()
-        self.voice.set("onyx")
-
-        # Create a dropdown with modern style
+        # --- Voice selection ---
+        self._sidebar_label(sb, "VOICE")
+        self.voice = tk.StringVar(value="onyx")
         voice_dropdown = ttk.OptionMenu(
-            self.root, 
-            self.voice, 
-            "Voice = Onyx", 
-            "Voice = Onyx", 
-            "Voice = Alloy", 
-            "Voice = Echo", 
-            "Voice = Fable", 
-            "Voice = Nova", 
-            "Voice = Shimmer", 
+            sb, self.voice, "Voice = Onyx",
+            "Voice = Onyx", "Voice = Alloy", "Voice = Echo",
+            "Voice = Fable", "Voice = Nova", "Voice = Shimmer",
             command=lambda x: self.change_voice(x),
-            style='Modern.TMenubutton'
+            style='Sidebar.TMenubutton'
         )
-        voice_dropdown.pack(pady=12)
+        voice_dropdown.pack(fill=tk.X, padx=16, pady=4)
+
+        self._sidebar_separator(sb)
+
+        # --- Debug toggle ---
+        self._sidebar_label(sb, "DEVELOPER")
+        self.debug_toggle_state = tk.IntVar(value=0)
+        ttk.Checkbutton(
+            sb, text="Debug Panel", variable=self.debug_toggle_state,
+            command=self.toggle_debug_panel, style='Sidebar.TCheckbutton'
+        ).pack(fill=tk.X, padx=16)
 
     def create_text_window(self):
-        # Create a Scrollbar with modern style
-        scrollbar = ttk.Scrollbar(self.root, style='Modern.Vertical.TScrollbar')
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 5), pady=20)
+        c = self.colors
+        # Text area frame
+        text_frame = tk.Frame(self.content, bg=c['bg_dark'])
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 8), pady=8)
 
-        # Create a Text widget with modern styling
+        scrollbar = ttk.Scrollbar(text_frame, style='Modern.Vertical.TScrollbar')
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
         self.text_field = tk.Text(
-            self.root, 
-            wrap=tk.WORD, 
-            yscrollcommand=scrollbar.set,
-            font=('Consolas', 11),
-            relief='flat',
-            borderwidth=0,
-            highlightthickness=1,
-            highlightbackground='#3d3d3d',
-            highlightcolor='#4a9eff',
-            insertbackground='#ffffff',
-            selectbackground='#4a9eff',
-            selectforeground='#ffffff'
+            text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set,
+            font=('Consolas', 11), relief='flat', borderwidth=0,
+            highlightthickness=1, highlightbackground=c['border'],
+            highlightcolor=c['accent'], insertbackground=c['fg'],
+            selectbackground=c['accent'], selectforeground='#ffffff',
+            background=c['bg_input'], foreground=c['fg'],
+            padx=12, pady=12
         )
-        self.text_field.pack(padx=25, pady=(15, 25), fill=tk.BOTH, expand=True)
+        self.text_field.pack(fill=tk.BOTH, expand=True)
 
-        # Configure text colors with modern palette
-        self.text_field.tag_config("tag_green", foreground="#50fa7b")
-        self.text_field.tag_config("tag_red", foreground="#ff5555")
-        self.text_field.tag_config("tag_white", foreground="#f8f8f2")
-        self.text_field.tag_config("tag_blue", foreground="#8be9fd")
-        self.text_field.tag_config("tag_light_blue", foreground="#8be9fd")
+        self.text_field.tag_config("tag_green", foreground=self.colors['green'])
+        self.text_field.tag_config("tag_red", foreground=self.colors['red'])
+        self.text_field.tag_config("tag_white", foreground=self.colors['fg_bright'])
+        self.text_field.tag_config("tag_blue", foreground=self.colors['cyan'])
+        self.text_field.tag_config("tag_light_blue", foreground=self.colors['cyan'])
 
-        # Modern dark background for the text field
-        self.text_field.config(background="#1e1e1e")
-
-        # Make the Text widget read-only
         self.text_field.config(state="disabled")
-
-        # Configure the Scrollbar to scroll the Text widget
         scrollbar.config(command=self.text_field.yview)
 
     # ----- Debug Panel -----
 
-    def create_debug_toggle_button(self):
-        self.debug_toggle_state = tk.IntVar()
-        self.debug_toggle_state.set(0)
-
-        toggle_button = ttk.Checkbutton(
-            self.root,
-            text="Debug Panel",
-            variable=self.debug_toggle_state,
-            command=self.toggle_debug_panel,
-            style='Modern.TCheckbutton'
-        )
-        toggle_button.pack(pady=6)
-
     def create_debug_panel(self):
-        self.debug_frame = tk.Frame(self.root, height=150)
+        c = self.colors
+        self.debug_frame = tk.Frame(self.content, bg=c['bg_dark'], height=150)
         self.debug_scrollbar = ttk.Scrollbar(self.debug_frame, style='Modern.Vertical.TScrollbar')
         self.debug_text = tk.Text(
-            self.debug_frame,
-            wrap=tk.WORD,
+            self.debug_frame, wrap=tk.WORD,
             yscrollcommand=self.debug_scrollbar.set,
-            font=('Consolas', 9),
-            relief='flat',
-            borderwidth=0,
-            highlightthickness=1,
-            highlightbackground='#3d3d3d',
-            highlightcolor='#ffa500',
-            background='#1a1a2e',
-            foreground='#ffa500',
-            insertbackground='#ffa500',
-            state='disabled'
+            font=('Consolas', 9), relief='flat', borderwidth=0,
+            highlightthickness=1, highlightbackground=c['border'],
+            highlightcolor=c['orange'],
+            background='#1a1a2e', foreground=c['orange'],
+            insertbackground=c['orange'], state='disabled',
+            padx=8, pady=8
         )
         self.debug_scrollbar.config(command=self.debug_text.yview)
         self.debug_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.debug_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        # Panel starts hidden
+        self.debug_text.pack(fill=tk.BOTH, expand=True)
         self.debug_panel_visible = False
 
     def toggle_debug_panel(self):
         if self.debug_toggle_state.get() == 1:
-            self.debug_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=25, pady=(0, 10))
+            self.debug_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=(0, 8), pady=(0, 8))
             self.debug_panel_visible = True
         else:
             self.debug_frame.pack_forget()
