@@ -210,13 +210,6 @@ class GuiHandler:
         self.text_field.config(state="disabled")
 
     def toggle_record(self):
-        # Check if keyboard input mode is enabled
-        if self.input_mode.get() == "keyboard":
-            # Start keyboard input mode
-            if not self.keyboard_input_mode:
-                self.start_keyboard_input()
-            return
-        
         # Toggle the recording state (microphone mode)
         if self.record_state == 'start':
             if self.start_record():  # Check if recording started successfully
@@ -261,14 +254,14 @@ class GuiHandler:
         self.keyboard_input_buffer = ""
         self.record_button.config(text="Type & Press Enter")
         
-        # Enable the text field for input
+        # Enable the text field for input and show prompt
         self.text_field.config(state="normal")
-        self.text_field.insert(tk.END, "YOUR INPUT: \n", "tag_white")
+        self.text_field.insert(tk.END, "USER: \n", "tag_white")
         self.text_field.see(tk.END)
-        
+
         # Store the position where user input starts
         self.keyboard_input_start = self.text_field.index(tk.END)
-        
+
         # Set focus to text field to capture all key events
         self.text_field.focus_set()
         
@@ -301,11 +294,6 @@ class GuiHandler:
                 self.text_field.delete("end-2c", "end-1c")
             return "break"
         
-        # Handle Escape to cancel
-        if event.keysym == "Escape":
-            self.cancel_keyboard_input()
-            return "break"
-        
         # Handle space key explicitly
         if event.keysym == "space":
             self.keyboard_input_buffer += " "
@@ -325,28 +313,28 @@ class GuiHandler:
     def submit_keyboard_input(self):
         """Submit the keyboard input and process it like voice input"""
         user_input = self.keyboard_input_buffer.strip()
-        
-        # Reset keyboard input mode
+
+        # Temporarily exit typing state while pipeline runs
         self.keyboard_input_mode = False
         self.keyboard_input_buffer = ""
-        self.record_button.config(text="Start Recording")
-        
+
         # Unbind keyboard events from text field
         self.text_field.unbind("<Key>")
         self.text_field.unbind("<space>")
-        
+
         # Disable text field editing
         self.text_field.config(state="normal")
         self.text_field.insert(tk.END, "\n\n", "tag_white")
         self.text_field.config(state="disabled")
-        
+
         # Rebind original key handler to root
         self.root.bind("<Key>", self.key_pressed)
-        # Return focus to root
         self.root.focus_set()
-        
+
         if not user_input:
             gui_handler.print_text("SYSTEM INFO: \nEmpty input, please try again.\n\n", TEXT_COLOR_SETTINGS)
+            # Re-enter typing mode immediately
+            self.start_keyboard_input()
             return
 
         # if follow up questions are enabled, then do not reset the chat history
@@ -355,30 +343,8 @@ class GuiHandler:
 
         # Disable button and run pipeline on background thread
         self.record_button.config(state="disabled")
-        threading.Thread(target=self._run_pipeline, args=(user_input,), daemon=True).start()
+        threading.Thread(target=self._run_pipeline, kwargs={"user_input": user_input, "from_keyboard": True}, daemon=True).start()
     
-    def cancel_keyboard_input(self):
-        """Cancel keyboard input mode"""
-        self.keyboard_input_mode = False
-        self.keyboard_input_buffer = ""
-        self.record_button.config(text="Start Recording")
-        
-        # Unbind keyboard events from text field
-        self.text_field.unbind("<Key>")
-        self.text_field.unbind("<space>")
-        
-        # Disable text field editing and add cancellation message
-        self.text_field.config(state="normal")
-        self.text_field.insert(tk.END, "\n[Cancelled]\n\n", "tag_light_blue")
-        self.text_field.config(state="disabled")
-        
-        # Rebind original key handler to root
-        self.root.bind("<Key>", self.key_pressed)
-        # Return focus to root
-        self.root.focus_set()
-        
-        gui_handler.print_text("SYSTEM INFO: \nKeyboard input cancelled.\n\n", TEXT_COLOR_SETTINGS)
-
     def toggle_execution(self):
         # Toggle the execution mode
         if self.toggle_state.get() == 1:
@@ -408,33 +374,33 @@ class GuiHandler:
     def change_input_mode(self):
         # Handle input mode change between keyboard and microphone
         if self.input_mode.get() == "keyboard":
-            # Change button text to reflect keyboard mode
-            self.record_button.config(text="Start Typing")
+            # Hide the record button — not needed in keyboard mode
+            self.record_button.pack_forget()
             gui_handler.print_text("SYSTEM INFO: \nInput Mode: Keyboard - Type your message and press Enter\n\n", TEXT_COLOR_SETTINGS)
+            # Immediately enter typing mode
+            self.start_keyboard_input()
         else:  # microphone mode
             # If keyboard input mode was active, cancel it properly
             if self.keyboard_input_mode:
                 self.keyboard_input_mode = False
                 self.keyboard_input_buffer = ""
-                self.record_button.config(text="Start Recording")
-                
+
                 # Unbind keyboard events from text field
                 self.text_field.unbind("<Key>")
                 self.text_field.unbind("<space>")
-                
+
                 # Disable text field editing and add cancellation message
                 self.text_field.config(state="normal")
                 self.text_field.insert(tk.END, "\n[Switched to Microphone mode]\n\n", "tag_light_blue")
                 self.text_field.config(state="disabled")
-                
+
                 # Rebind original key handler to root
                 self.root.bind("<Key>", self.key_pressed)
-                # Return focus to root
                 self.root.focus_set()
-            else:
-                # Change button text back to microphone mode
-                self.record_button.config(text="Start Recording")
-            
+
+            # Show the record button again
+            self.record_button.pack(fill=tk.X, padx=16, pady=(8, 4))
+            self.record_button.config(text="Start Recording")
             gui_handler.print_text("SYSTEM INFO: \nInput Mode: Microphone\n\n", TEXT_COLOR_SETTINGS)
 
     def change_voice(self, voice):
@@ -631,7 +597,7 @@ class GuiHandler:
 
     # ----- Pipeline (runs on background thread) -----
 
-    def _run_pipeline(self, user_input=None, from_speech=False):
+    def _run_pipeline(self, user_input=None, from_speech=False, from_keyboard=False):
         """Runs the full request pipeline off the main thread."""
         pipeline_start = time.time()
         try:
@@ -640,7 +606,8 @@ class GuiHandler:
             if from_speech:
                 user_input = SoundHandler.speech_to_text("audio_record.wav", openai_handler.OpenAiClient)
 
-            self.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
+            if not from_keyboard:
+                self.print_text(f"USER: \n{user_input}\n\n", TEXT_COLOR_USER)
             PromptHandler.add_to_chat_history(user_input, "user")
 
             OpenAiHandler.generate_AI_response(prompt_handler.chat_history, openai_handler.OpenAiClient)
@@ -654,6 +621,9 @@ class GuiHandler:
 
     def _pipeline_finished(self):
         self.record_button.config(state="normal")
+        # Auto-resume keyboard input if still in keyboard mode
+        if self.input_mode.get() == "keyboard":
+            self.start_keyboard_input()
 
     def start_gui(self):
         # Start the GUI event loop
