@@ -94,6 +94,7 @@ class GuiHandler:
         self.create_toogle_button_two()
         self.create_input_mode_radio_buttons()
         self.create_voice_dropdown()
+        self.create_speech_output_toggle_button()
         self.create_debug_toggle_button()
         self.create_text_window()
         self.create_debug_panel()
@@ -384,6 +385,14 @@ class GuiHandler:
             prompt_handler.follow_up_questions = False
             gui_handler.print_text("SYSTEM INFO: \nFollow-Up Questions Disabled\n\n", TEXT_COLOR_SETTINGS)        
 
+    def toggle_speech_output(self):
+        if self.speech_output_state.get() == 1:
+            prompt_handler.speech_output_enabled = True
+            gui_handler.print_text("SYSTEM INFO: \nSpeech Output Enabled\n\n", TEXT_COLOR_SETTINGS)
+        else:
+            prompt_handler.speech_output_enabled = False
+            gui_handler.print_text("SYSTEM INFO: \nSpeech Output Disabled\n\n", TEXT_COLOR_SETTINGS)
+
     def change_input_mode(self):
         # Handle input mode change between keyboard and microphone
         if self.input_mode.get() == "keyboard":
@@ -495,6 +504,21 @@ class GuiHandler:
         )
         toggle_button_two.pack(pady=6)
     
+    def create_speech_output_toggle_button(self):
+        # Create a variable to hold the state of the toggle button
+        self.speech_output_state = tk.IntVar()
+        self.speech_output_state.set(1)  # Speech output enabled by default
+
+        # Create a toggle button with modern style
+        speech_output_button = ttk.Checkbutton(
+            self.root,
+            text="Speech Output",
+            variable=self.speech_output_state,
+            command=lambda: self.toggle_speech_output(),
+            style='Modern.TCheckbutton'
+        )
+        speech_output_button.pack(pady=6)
+
     def create_input_mode_radio_buttons(self):
         # Create a variable to hold the input mode selection
         self.input_mode = tk.StringVar()
@@ -984,6 +1008,7 @@ class PromptHandler:
         # default settings for toggle buttons
         self.ask_for_execution = True
         self.follow_up_questions = False
+        self.speech_output_enabled = True
         self.listen_to_keys = False
         self.pressed_key = None
         self.key_is_caught = False
@@ -1061,7 +1086,8 @@ class PromptHandler:
             
             gui_handler.print_text(f"AI TO USER: \n{clean_message}\n\n", TEXT_COLOR_AI) 
 
-            SoundHandler.text_to_speech(clean_message, openai_handler.OpenAiClient, sound_handler.voice_agent)
+            if prompt_handler.speech_output_enabled:
+                SoundHandler.text_to_speech(clean_message, openai_handler.OpenAiClient, sound_handler.voice_agent)
 
             # show the number of tokens used in the current conversation
             token_use = PromptHandler.num_tokens_from_string(str(prompt_handler.chat_history), 'cl100k_base') #cl100k_base #p50k_base
