@@ -5,3 +5,4 @@ test_lab*
 *generated_audio.mp3
 *audio_record.wav
 .claude
+__pycache__/
