@@ -238,6 +238,60 @@ class GuiHandler:
         if not self.keyboard_input_mode:
             self.text_field.config(state="disabled")
 
+    def print_text_typewriter(self, text, color, delay=15, on_complete=None):
+        """Print text character-by-character with a typewriter effect.
+        The header (e.g. 'AI TO USER: \\n') appears instantly; the body is typed out.
+        on_complete is called when the typewriter finishes.
+        Can be called from any thread — schedules itself on the main thread."""
+        if threading.current_thread() is not threading.main_thread():
+            self.root.after(0, self.print_text_typewriter, text, color, delay, on_complete)
+            return
+
+        # Split into header + body at the first newline
+        newline_pos = text.find("\n")
+        if newline_pos != -1:
+            header = text[:newline_pos + 1]
+            body = text[newline_pos + 1:]
+        else:
+            header = ""
+            body = text
+
+        # Print header instantly using normal print_text
+        if header:
+            self.text_field.config(state="normal")
+            self.text_field.insert(tk.END, header, f"tag_{color}")
+            self.text_field.update_idletasks()
+            self.text_field.see(tk.END)
+
+        # Typewriter output is not a SYSTEM INFO message, so reset the merge flag
+        self.last_was_system_info = False
+
+        # Type out the body character by character
+        self._typewriter_queue = list(body)
+        self._typewriter_color = color
+        self._typewriter_delay = delay
+        self._typewriter_on_complete = on_complete
+        self._typewriter_tick()
+
+    def _typewriter_tick(self):
+        """Insert one character from the typewriter queue, then schedule the next."""
+        if not self._typewriter_queue:
+            # Done — disable editing
+            if not self.keyboard_input_mode:
+                self.text_field.config(state="disabled")
+            if self._typewriter_on_complete:
+                self._typewriter_on_complete()
+                self._typewriter_on_complete = None
+            return
+
+        char = self._typewriter_queue.pop(0)
+        self.text_field.config(state="normal")
+        self.text_field.insert(tk.END, char, f"tag_{self._typewriter_color}")
+        self.text_field.see(tk.END)
+        self.text_field.update_idletasks()
+
+        self.root.after(self._typewriter_delay, self._typewriter_tick)
+
     def toggle_record(self):
         # Toggle the recording state (microphone mode)
         if self.record_state == 'start':
@@ -1044,25 +1098,36 @@ class PromptHandler:
                 clean_message = response_message
 
             PromptHandler.add_to_chat_history(clean_message, "assistant")
-            
-            gui_handler.print_text(f"AI TO USER: \n{clean_message}\n\n", TEXT_COLOR_AI) 
 
-            if prompt_handler.speech_output_enabled:
-                SoundHandler.text_to_speech(clean_message, openai_handler.OpenAiClient, sound_handler.voice_agent)
-
-            # show the number of tokens used in the current conversation
+            # Compute token stats now, but display them after the typewriter finishes
             token_use = PromptHandler.num_tokens_from_string(str(prompt_handler.chat_history), 'cl100k_base') #cl100k_base #p50k_base
             prompt_handler.current_token_use = token_use
             token_max = 16384
-            gui_handler.print_text(f"SYSTEM INFO: \nTokens used: {token_use} / {token_max} ({round(token_use/token_max*100, 2)} %)\n\n", TEXT_COLOR_SETTINGS)
-
-            # save the message stream (here we are at the end of the conversation)
             PromptHandler.save_chat_history(prompt_handler.chat_history)
 
-            # if there are too many tokens used, then reset the chat history forcefully and let the user know
-            if token_use > token_max-2000:
-                prompt_handler.chat_history = PromptHandler.reset_chat_history()
-                gui_handler.print_text(f"SYSTEM INFO: \nMaximum number of tokens reached, chat history reset.\n\n", TEXT_COLOR_SETTINGS)
+            # Start TTS in a separate thread so it plays parallel to the typewriter
+            if prompt_handler.speech_output_enabled:
+                threading.Thread(
+                    target=SoundHandler.text_to_speech,
+                    args=(clean_message, openai_handler.OpenAiClient, sound_handler.voice_agent),
+                    daemon=True
+                ).start()
+
+            # Use an event to block the pipeline thread until the typewriter finishes,
+            # preventing _pipeline_finished from firing too early
+            typewriter_done = threading.Event()
+
+            def _after_typewriter():
+                gui_handler.print_text(f"SYSTEM INFO: \nTokens used: {token_use} / {token_max} ({round(token_use/token_max*100, 2)} %)\n\n", TEXT_COLOR_SETTINGS)
+                if token_use > token_max-2000:
+                    prompt_handler.chat_history = PromptHandler.reset_chat_history()
+                    gui_handler.print_text(f"SYSTEM INFO: \nMaximum number of tokens reached, chat history reset.\n\n", TEXT_COLOR_SETTINGS)
+                typewriter_done.set()
+
+            gui_handler.print_text_typewriter(f"AI TO USER: \n{clean_message}\n\n", TEXT_COLOR_AI, on_complete=_after_typewriter)
+
+            # Wait for typewriter + system info to complete before pipeline returns
+            typewriter_done.wait()
                 
 
         # if the ai response is a command, forward it to the shell handler
@@ -1070,9 +1135,17 @@ class PromptHandler:
             # check if prompt handler is in "Ask Before Execution" mode
             if prompt_handler.ask_for_execution:
                 #gui
-                gui_handler.print_text(f"AI PROPOSAL: \n{response_message}\n\n", TEXT_COLOR_AI_PROPOSAL)
-                gui_handler.print_text("SYSTEM INFO: \nLet through? (y/n): \n", TEXT_COLOR_SETTINGS)
-                
+                # Show proposal with typewriter, then prompt for approval after it finishes
+                proposal_done = [False]
+                def _show_yn_prompt():
+                    gui_handler.print_text("SYSTEM INFO: \nLet through? (y/n): \n", TEXT_COLOR_SETTINGS)
+                    proposal_done[0] = True
+                gui_handler.print_text_typewriter(f"AI PROPOSAL: \n{response_message}\n\n", TEXT_COLOR_AI_PROPOSAL, on_complete=_show_yn_prompt)
+
+                # Wait for typewriter to finish before listening for keys
+                while not proposal_done[0]:
+                    time.sleep(0.05)
+
                 # Wait for user key press (already on background thread, so this won't freeze the UI)
                 gui_handler.debug_log("Waiting for user approval (y/n)...")
                 prompt_handler.listen_to_keys = True
@@ -1099,7 +1172,7 @@ class PromptHandler:
                     PromptHandler.save_chat_history(prompt_handler.chat_history)
 
             else:  # if not in ask for execution mode - forward everything to the shell
-                gui_handler.print_text(f"AI CODE: \n{response_message}\n\n", TEXT_COLOR_AI) 
+                gui_handler.print_text_typewriter(f"AI CODE: \n{response_message}\n\n", TEXT_COLOR_AI)
                 PromptHandler.add_to_chat_history(response_message, "assistant")
                 shell_handler.execute(response_message)
                 
