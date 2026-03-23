@@ -404,7 +404,7 @@ class GuiHandler:
         # Build sidebar and content
         self.build_sidebar()
         self.create_text_window()
-        self.create_debug_panel()
+        self.create_bottom_panels()
 
         # Keyboard input mode variables
         self.keyboard_input_mode = False
@@ -880,18 +880,23 @@ class GuiHandler:
 
         self._sidebar_separator(sb)
 
-        # --- Debug toggle ---
-        self._sidebar_label(sb, "DEVELOPER")
+        self._sidebar_separator(sb)
+
+        # --- Tools section ---
+        self._sidebar_label(sb, "TOOLS")
+
+        self.shell_panel_toggle_state = tk.IntVar(value=0)
+        ttk.Checkbutton(
+            sb, text="PowerShell Panel", variable=self.shell_panel_toggle_state,
+            command=self.toggle_shell_panel, style='Sidebar.TCheckbutton'
+        ).pack(fill=tk.X, padx=16)
+
         self.debug_toggle_state = tk.IntVar(value=0)
         ttk.Checkbutton(
             sb, text="Debug Panel", variable=self.debug_toggle_state,
             command=self.toggle_debug_panel, style='Sidebar.TCheckbutton'
         ).pack(fill=tk.X, padx=16)
 
-        self._sidebar_separator(sb)
-
-        # --- Reset PowerShell button ---
-        self._sidebar_label(sb, "TOOLS")
         self.reset_shell_button = RoundedButton(
             sb, text="Reset PowerShell", command=self.reset_shell,
             font=('Segoe UI', 9, 'bold'), fg='#ffffff', bg=c['red'],
@@ -938,11 +943,47 @@ class GuiHandler:
         self.text_field.config(state="disabled")
         scrollbar._command = self.text_field.yview
 
-    # ----- Debug Panel -----
+    # ----- Bottom Panels (PowerShell + Debug) -----
 
-    def create_debug_panel(self):
+    def create_bottom_panels(self):
         c = self.colors
-        self.debug_frame = tk.Frame(self.content, bg=c['bg_dark'], height=150)
+
+        # Container for panels — hidden until at least one panel is enabled
+        self.bottom_paned = tk.PanedWindow(
+            self.content, orient=tk.HORIZONTAL, sashwidth=6,
+            bg=c['bg_dark'], borderwidth=0, sashrelief='flat',
+            opaqueresize=True
+        )
+        self.bottom_paned_visible = False
+        self.panel_ratio = 0.5  # remembered sash ratio
+
+        # Track sash drags to remember the ratio
+        self.bottom_paned.bind('<ButtonRelease-1>', self._on_sash_release)
+
+        # --- PowerShell panel ---
+        self.shell_frame = tk.Frame(self.bottom_paned, bg='#1a1a2e',
+            highlightthickness=1, highlightbackground=c['border'])
+        self.shell_scrollbar = ModernScrollbar(
+            self.shell_frame, bg='#1a1a2e',
+            thumb_color=c['green'], thumb_hover=c['green'], width=8
+        )
+        self.shell_text = tk.Text(
+            self.shell_frame, wrap=tk.WORD,
+            yscrollcommand=self.shell_scrollbar.set,
+            font=('Consolas', 9), relief='flat', borderwidth=0,
+            highlightthickness=0,
+            background='#1a1a2e', foreground=c['green'],
+            insertbackground=c['green'], state='disabled',
+            padx=8, pady=8
+        )
+        self.shell_scrollbar._command = self.shell_text.yview
+        self.shell_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=4)
+        self.shell_text.pack(fill=tk.BOTH, expand=True)
+        self.shell_panel_visible = False
+
+        # --- Debug panel ---
+        self.debug_frame = tk.Frame(self.bottom_paned, bg='#1a1a2e',
+            highlightthickness=1, highlightbackground=c['border'])
         self.debug_scrollbar = ModernScrollbar(
             self.debug_frame, bg='#1a1a2e',
             thumb_color=c['orange'], thumb_hover=c['orange'], width=8
@@ -961,13 +1002,86 @@ class GuiHandler:
         self.debug_text.pack(fill=tk.BOTH, expand=True)
         self.debug_panel_visible = False
 
-    def toggle_debug_panel(self):
-        if self.debug_toggle_state.get() == 1:
-            self.debug_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=(0, 8), pady=(0, 8))
+    def _on_sash_release(self, event):
+        """Remember the sash position as a ratio so it survives resizes."""
+        try:
+            sash_x = self.bottom_paned.sash_coord(0)[0]
+            total_w = self.bottom_paned.winfo_width()
+            if total_w > 0:
+                self.panel_ratio = sash_x / total_w
+        except Exception:
+            pass
+
+    def _apply_sash_ratio(self):
+        """Position the sash according to the stored ratio (after layout settles)."""
+        total_w = self.bottom_paned.winfo_width()
+        if total_w > 1:
+            self.bottom_paned.sash_place(0, int(total_w * self.panel_ratio), 0)
+
+    def _update_bottom_panels(self):
+        """Show/hide the paned container and its panes based on toggle states."""
+        shell_on = self.shell_panel_toggle_state.get() == 1
+        debug_on = self.debug_toggle_state.get() == 1
+
+        # Remove all panes first
+        for pane in self.bottom_paned.panes():
+            self.bottom_paned.forget(pane)
+
+        if not shell_on and not debug_on:
+            # Hide the whole container
+            if self.bottom_paned_visible:
+                self.bottom_paned.pack_forget()
+                self.bottom_paned_visible = False
+            self.shell_panel_visible = False
+            self.debug_panel_visible = False
+            return
+
+        # Add the active panes
+        if shell_on:
+            self.bottom_paned.add(self.shell_frame, stretch='always')
+            self.shell_panel_visible = True
+        else:
+            self.shell_panel_visible = False
+
+        if debug_on:
+            self.bottom_paned.add(self.debug_frame, stretch='always')
             self.debug_panel_visible = True
         else:
-            self.debug_frame.pack_forget()
             self.debug_panel_visible = False
+
+        # Show the container
+        if not self.bottom_paned_visible:
+            self.bottom_paned.pack(side=tk.BOTTOM, fill=tk.BOTH,
+                                   expand=False, padx=(0, 8), pady=(0, 8))
+            # Give it a fixed height
+            self.bottom_paned.config(height=180)
+            self.bottom_paned_visible = True
+
+        # If both are visible, apply the sash ratio after the layout settles
+        if shell_on and debug_on:
+            self.bottom_paned.after(50, self._apply_sash_ratio)
+
+    def toggle_shell_panel(self):
+        self._update_bottom_panels()
+
+    def toggle_debug_panel(self):
+        self._update_bottom_panels()
+
+    def shell_log(self, message):
+        """Thread-safe: append text to the PowerShell panel."""
+        self.root.after(0, self._shell_log_impl, message)
+
+    def _shell_log_impl(self, message):
+        self.shell_text.config(state='normal')
+        self.shell_text.insert(tk.END, message)
+        self.shell_text.see(tk.END)
+        self.shell_text.config(state='disabled')
+
+    def clear_shell_log(self):
+        """Clear the PowerShell panel content."""
+        self.shell_text.config(state='normal')
+        self.shell_text.delete('1.0', tk.END)
+        self.shell_text.config(state='disabled')
 
     def debug_log(self, message):
         """Thread-safe: schedules the actual write on the main thread."""
@@ -994,6 +1108,7 @@ class GuiHandler:
         except Exception:
             shell_handler.shell_process.kill()
         shell_handler = ShellHandler()
+        self.clear_shell_log()
         self.print_text("SYSTEM INFO: \nPowerShell connection has been reset.\n\n", TEXT_COLOR_SETTINGS)
         PromptHandler.add_to_chat_history("PowerShell connection reset by user.", "system")
         PromptHandler.save_chat_history(prompt_handler.chat_history)
@@ -1256,7 +1371,9 @@ class ShellHandler:
         gui_handler.debug_log(f"Shell execution done ({time.time()-t:.2f}s)")
         self.save_to_file(shell_output, commands, "complete_command_history.txt")
 
-        gui_handler.print_text(f"POWER SHELL: \n{shell_output}\n\n", TEXT_COLOR_POWER_SHELL) 
+        gui_handler.print_text(f"POWER SHELL: \n{shell_output}\n\n", TEXT_COLOR_POWER_SHELL)
+        clean_commands = commands.replace("clear\n", "").replace("\necho 'IDENTIFIER_251223'\n", "")
+        gui_handler.shell_log(f"PS> {clean_commands}\n{shell_output}\n")
 
         # count tokens of the power shell answer, also count the letters of power shell answer
         shell_answer_tokens = PromptHandler.num_tokens_from_string(shell_output, 'cl100k_base') #cl100k_base #p50k_base
