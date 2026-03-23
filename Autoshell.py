@@ -888,6 +888,18 @@ class GuiHandler:
             command=self.toggle_debug_panel, style='Sidebar.TCheckbutton'
         ).pack(fill=tk.X, padx=16)
 
+        self._sidebar_separator(sb)
+
+        # --- Reset PowerShell button ---
+        self._sidebar_label(sb, "TOOLS")
+        self.reset_shell_button = RoundedButton(
+            sb, text="Reset PowerShell", command=self.reset_shell,
+            font=('Segoe UI', 9, 'bold'), fg='#ffffff', bg=c['red'],
+            hover_bg='#ff8fa3', active_bg='#d9566b',
+            canvas_bg=c['bg_sidebar'], radius=12, height=34
+        )
+        self.reset_shell_button.pack(fill=tk.X, padx=16, pady=(4, 8))
+
     def create_text_window(self):
         c = self.colors
         # Text area frame with rounded corners via container
@@ -972,6 +984,20 @@ class GuiHandler:
         self.debug_text.config(state='disabled')
 
     # ----- Pipeline (runs on background thread) -----
+
+    def reset_shell(self):
+        """Kill the current PowerShell process and start a fresh one."""
+        global shell_handler
+        try:
+            shell_handler.shell_process.terminate()
+            shell_handler.shell_process.wait(timeout=5)
+        except Exception:
+            shell_handler.shell_process.kill()
+        shell_handler = ShellHandler()
+        self.print_text("SYSTEM INFO: \nPowerShell connection has been reset.\n\n", TEXT_COLOR_SETTINGS)
+        PromptHandler.add_to_chat_history("PowerShell connection reset by user.", "system")
+        PromptHandler.save_chat_history(prompt_handler.chat_history)
+        self.debug_log("PowerShell reset by user")
 
     def _run_pipeline(self, user_input=None, from_speech=False, from_keyboard=False):
         """Runs the full request pipeline off the main thread."""
