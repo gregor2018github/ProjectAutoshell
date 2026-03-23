@@ -52,6 +52,294 @@ FORWARDING_MODEL_PRESENCE_PENALTY = 0
 
 
 #-------------------------------------------------------
+# Modern Scrollbar Widget
+#-------------------------------------------------------
+
+class ModernScrollbar(tk.Canvas):
+    """A thin, rounded scrollbar that fades in when scrolling and fades out when idle."""
+
+    def __init__(self, parent, command=None, bg='#1a1b26', thumb_color='#3b4261',
+                 thumb_hover='#565f89', width=10, fade_delay=1500, **kwargs):
+        super().__init__(parent, width=width, bg=bg, highlightthickness=0,
+                         borderwidth=0, **kwargs)
+        self._command = command
+        self._thumb_color = thumb_color
+        self._thumb_hover = thumb_hover
+        self._bar_width = width
+        self._fade_delay = fade_delay
+        self._lo = 0.0
+        self._hi = 1.0
+        self._thumb_id = None
+        self._dragging = False
+        self._drag_start_y = 0
+        self._drag_start_lo = 0.0
+        self._alpha = 0.0          # 0 = hidden, 1 = fully visible
+        self._fade_after_id = None
+        self._hovering = False
+
+        self.bind('<Configure>', lambda e: self._draw())
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<Leave>', self._on_leave)
+        self.bind('<ButtonPress-1>', self._on_press)
+        self.bind('<B1-Motion>', self._on_drag)
+        self.bind('<ButtonRelease-1>', self._on_release)
+        # Mouse wheel on scrollbar itself
+        self.bind('<MouseWheel>', self._on_mousewheel)
+
+    def set(self, lo, hi):
+        """Called by the text widget to update scrollbar position."""
+        self._lo = float(lo)
+        self._hi = float(hi)
+        # If content fits entirely, hide and stay hidden
+        if self._hi - self._lo >= 1.0:
+            self._alpha = 0.0
+            self._draw()
+            return
+        # Show scrollbar on scroll activity
+        self._alpha = 1.0
+        self._draw()
+        self._schedule_fade()
+
+    def _schedule_fade(self):
+        if self._fade_after_id:
+            self.after_cancel(self._fade_after_id)
+        if not self._dragging and not self._hovering:
+            self._fade_after_id = self.after(self._fade_delay, self._start_fade)
+
+    def _start_fade(self):
+        if self._hovering or self._dragging:
+            return
+        self._alpha -= 0.1
+        if self._alpha <= 0:
+            self._alpha = 0.0
+            self._draw()
+            return
+        self._draw()
+        self._fade_after_id = self.after(30, self._start_fade)
+
+    def _on_enter(self, event):
+        self._hovering = True
+        if self._hi - self._lo < 1.0:
+            self._alpha = 1.0
+            self._draw()
+
+    def _on_leave(self, event):
+        self._hovering = False
+        self._schedule_fade()
+        self._draw()
+
+    def _on_press(self, event):
+        if self._hi - self._lo >= 1.0:
+            return
+        h = self.winfo_height()
+        thumb_top = self._lo * h
+        thumb_bot = self._hi * h
+        if thumb_top <= event.y <= thumb_bot:
+            self._dragging = True
+            self._drag_start_y = event.y
+            self._drag_start_lo = self._lo
+        else:
+            # Click above/below thumb — jump
+            frac = event.y / h
+            span = self._hi - self._lo
+            new_lo = frac - span / 2
+            new_lo = max(0, min(new_lo, 1.0 - span))
+            if self._command:
+                self._command('moveto', str(new_lo))
+
+    def _on_drag(self, event):
+        if not self._dragging:
+            return
+        h = self.winfo_height()
+        dy = event.y - self._drag_start_y
+        delta = dy / h
+        span = self._hi - self._lo
+        new_lo = self._drag_start_lo + delta
+        new_lo = max(0, min(new_lo, 1.0 - span))
+        if self._command:
+            self._command('moveto', str(new_lo))
+
+    def _on_release(self, event):
+        self._dragging = False
+        self._schedule_fade()
+
+    def _on_mousewheel(self, event):
+        if self._command:
+            self._command('scroll', str(-1 if event.delta > 0 else 1), 'units')
+
+    def _draw(self):
+        self.delete('all')
+        if self._alpha <= 0 or self._hi - self._lo >= 1.0:
+            return
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if h <= 0:
+            return
+
+        pad = 2
+        bar_w = self._bar_width - pad * 2
+        x1 = pad
+        x2 = pad + bar_w
+        y1 = max(self._lo * h, 0)
+        y2 = min(self._hi * h, h)
+        radius = bar_w / 2
+
+        # Blend thumb color with alpha
+        color = self._thumb_hover if self._hovering else self._thumb_color
+        blended = self._blend_color(color, self.cget('bg'), self._alpha)
+
+        # Draw rounded rectangle thumb
+        self._round_rect(x1, y1, x2, y2, radius, fill=blended, outline='')
+
+    def _round_rect(self, x1, y1, x2, y2, r, **kwargs):
+        """Draw a rounded rectangle on the canvas."""
+        r = min(r, (y2 - y1) / 2, (x2 - x1) / 2)
+        self.create_arc(x1, y1, x1 + 2*r, y1 + 2*r, start=90, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_arc(x2 - 2*r, y1, x2, y1 + 2*r, start=0, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_arc(x1, y2 - 2*r, x1 + 2*r, y2, start=180, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_arc(x2 - 2*r, y2 - 2*r, x2, y2, start=270, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_rectangle(x1 + r, y1, x2 - r, y2, **kwargs)
+        self.create_rectangle(x1, y1 + r, x2, y2 - r, **kwargs)
+
+    @staticmethod
+    def _blend_color(fg_hex, bg_hex, alpha):
+        """Blend fg over bg by alpha (0..1)."""
+        fg = [int(fg_hex[i:i+2], 16) for i in (1, 3, 5)]
+        bg = [int(bg_hex[i:i+2], 16) for i in (1, 3, 5)]
+        blended = [int(f * alpha + b * (1 - alpha)) for f, b in zip(fg, bg)]
+        return f'#{blended[0]:02x}{blended[1]:02x}{blended[2]:02x}'
+
+
+#-------------------------------------------------------
+# Rounded Button Widget
+#-------------------------------------------------------
+
+class RoundedButton(tk.Canvas):
+    """A flat button with rounded corners drawn on a Canvas."""
+
+    def __init__(self, parent, text="", command=None, font=('Segoe UI', 11, 'bold'),
+                 fg='#ffffff', bg='#7aa2f7', hover_bg='#89b4fa', active_bg='#5d87e0',
+                 canvas_bg='#24283b', radius=12, padx=16, pady=10, **kwargs):
+        # Estimate size
+        self._text = text
+        self._font = font
+        self._fg = fg
+        self._bg = bg
+        self._hover_bg = hover_bg
+        self._active_bg = active_bg
+        self._canvas_bg = canvas_bg
+        self._radius = radius
+        self._command = command
+        self._current_bg = bg
+        self._state = 'normal'
+
+        super().__init__(parent, highlightthickness=0, borderwidth=0, bg=canvas_bg, **kwargs)
+
+        self.bind('<Configure>', self._on_configure)
+        self.bind('<Enter>', self._on_enter)
+        self.bind('<Leave>', self._on_leave)
+        self.bind('<ButtonPress-1>', self._on_press)
+        self.bind('<ButtonRelease-1>', self._on_release)
+
+    def _on_configure(self, event=None):
+        self._redraw()
+
+    def _redraw(self):
+        self.delete('all')
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w <= 1 or h <= 1:
+            return
+        r = min(self._radius, h // 2)
+        self._draw_rounded_rect(0, 0, w, h, r, fill=self._current_bg, outline='')
+        self.create_text(w // 2, h // 2, text=self._text, font=self._font,
+                         fill=self._fg if self._state == 'normal' else '#888888')
+
+    def _draw_rounded_rect(self, x1, y1, x2, y2, r, **kwargs):
+        r = min(r, (y2 - y1) // 2, (x2 - x1) // 2)
+        self.create_arc(x1, y1, x1 + 2*r, y1 + 2*r, start=90, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_arc(x2 - 2*r, y1, x2, y1 + 2*r, start=0, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_arc(x1, y2 - 2*r, x1 + 2*r, y2, start=180, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_arc(x2 - 2*r, y2 - 2*r, x2, y2, start=270, extent=90,
+                        style='pieslice', **kwargs)
+        self.create_rectangle(x1 + r, y1, x2 - r, y2, **kwargs)
+        self.create_rectangle(x1, y1 + r, x2, y2 - r, **kwargs)
+
+    def _on_enter(self, event):
+        if self._state == 'normal':
+            self._current_bg = self._hover_bg
+            self._redraw()
+            self.config(cursor='hand2')
+
+    def _on_leave(self, event):
+        if self._state == 'normal':
+            self._current_bg = self._bg
+            self._redraw()
+
+    def _on_press(self, event):
+        if self._state == 'normal':
+            self._current_bg = self._active_bg
+            self._redraw()
+
+    def _on_release(self, event):
+        if self._state == 'normal':
+            self._current_bg = self._hover_bg
+            self._redraw()
+            if self._command:
+                self._command()
+
+    def config(self, **kwargs):
+        redraw = False
+        if 'text' in kwargs:
+            self._text = kwargs.pop('text')
+            redraw = True
+        if 'bg' in kwargs:
+            self._bg = kwargs.pop('bg')
+            self._current_bg = self._bg
+            redraw = True
+        if 'activebackground' in kwargs:
+            kwargs.pop('activebackground')
+        if 'state' in kwargs:
+            self._state = kwargs.pop('state')
+            if self._state == 'disabled':
+                self._current_bg = '#3b4261'
+            else:
+                self._current_bg = self._bg
+            redraw = True
+        if 'command' in kwargs:
+            self._command = kwargs.pop('command')
+        if 'fg' in kwargs:
+            self._fg = kwargs.pop('fg')
+            redraw = True
+        if 'font' in kwargs:
+            self._font = kwargs.pop('font')
+            redraw = True
+        if kwargs:
+            super().config(**kwargs)
+        if redraw:
+            self._redraw()
+
+    # Alias for ttk-style compatibility
+    configure = config
+
+    def bind(self, sequence=None, func=None, add=None):
+        """Override bind to handle hover rebinds from toggle_record."""
+        # If external code tries to rebind Enter/Leave for hover colors, ignore
+        # (our _on_enter/_on_leave handles it via bg property)
+        if sequence in ('<Enter>', '<Leave>') and func is not None:
+            # Extract bg color from the lambda if possible, otherwise ignore
+            return
+        return super().bind(sequence, func, add)
+
+
+#-------------------------------------------------------
 # Guided User Interface
 #-------------------------------------------------------
 
@@ -172,14 +460,7 @@ class GuiHandler:
             foreground=[('active', c['fg_bright'])]
         )
 
-        # Scrollbar
-        style.configure('Modern.Vertical.TScrollbar',
-            background=c['bg_card'], troughcolor=c['bg_dark'],
-            borderwidth=0, arrowcolor=c['fg_dim'], relief='flat'
-        )
-        style.map('Modern.Vertical.TScrollbar',
-            background=[('active', c['border'])]
-        )
+        # (Scrollbar uses custom ModernScrollbar canvas widget instead of ttk)
 
     def play_sound(self, file_name):
         self.debug_log("Playing audio...")
@@ -296,23 +577,15 @@ class GuiHandler:
         # Toggle the recording state (microphone mode)
         if self.record_state == 'start':
             if self.start_record():  # Check if recording started successfully
-                self.record_button.config(
-                    text="Stop Recording",
-                    bg=self.colors['recording'],
-                    activebackground=self.colors['red']
-                )
-                self.record_button.bind('<Enter>', lambda e: self.record_button.config(bg='#ff8fa3'))
-                self.record_button.bind('<Leave>', lambda e: self.record_button.config(bg=self.colors['recording']))
+                self.record_button._hover_bg = '#ff8fa3'
+                self.record_button._active_bg = self.colors['red']
+                self.record_button.config(text="Stop Recording", bg=self.colors['recording'])
                 self.record_state = 'stop'
         else:
             self.stop_record()
-            self.record_button.config(
-                text="Start Recording",
-                bg=self.colors['accent'],
-                activebackground=self.colors['accent_hover']
-            )
-            self.record_button.bind('<Enter>', lambda e: self.record_button.config(bg=self.colors['accent_hover']))
-            self.record_button.bind('<Leave>', lambda e: self.record_button.config(bg=self.colors['accent']))
+            self.record_button._hover_bg = self.colors['accent_hover']
+            self.record_button._active_bg = self.colors['accent_active']
+            self.record_button.config(text="Start Recording", bg=self.colors['accent'])
             self.record_state = 'start'
 
     def start_record(self):
@@ -551,16 +824,13 @@ class GuiHandler:
 
         # --- Record button ---
         self.record_state = 'start'
-        self.record_button = tk.Button(
+        self.record_button = RoundedButton(
             sb, text="Start Recording", command=self.toggle_record,
             font=('Segoe UI', 11, 'bold'), fg='#ffffff', bg=c['accent'],
-            activeforeground='#ffffff', activebackground=c['accent_hover'],
-            relief='flat', cursor='hand2', bd=0, highlightthickness=0,
-            padx=16, pady=10
+            hover_bg=c['accent_hover'], active_bg=c['accent_active'],
+            canvas_bg=c['bg_sidebar'], radius=12, height=42
         )
         self.record_button.pack(fill=tk.X, padx=16, pady=(8, 4))
-        self.record_button.bind('<Enter>', lambda e: self.record_button.config(bg=c['accent_hover']))
-        self.record_button.bind('<Leave>', lambda e: self.record_button.config(bg=c['accent']))
 
         # --- Input mode ---
         self._sidebar_label(sb, "INPUT MODE")
@@ -620,23 +890,32 @@ class GuiHandler:
 
     def create_text_window(self):
         c = self.colors
-        # Text area frame
+        # Text area frame with rounded corners via container
         text_frame = tk.Frame(self.content, bg=c['bg_dark'])
-        text_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 8), pady=8)
+        text_frame.pack(fill=tk.BOTH, expand=True, padx=(4, 8), pady=8)
 
-        scrollbar = ttk.Scrollbar(text_frame, style='Modern.Vertical.TScrollbar')
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        # Modern auto-hiding scrollbar
+        scrollbar = ModernScrollbar(
+            text_frame, bg=c['bg_input'],
+            thumb_color=c['bg_card'], thumb_hover=c['fg_dim'], width=8
+        )
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=4)
 
         self.text_field = tk.Text(
             text_frame, wrap=tk.WORD, yscrollcommand=scrollbar.set,
             font=('Consolas', 11), relief='flat', borderwidth=0,
-            highlightthickness=1, highlightbackground=c['border'],
-            highlightcolor=c['accent'], insertbackground=c['fg'],
+            highlightthickness=0,
+            insertbackground=c['fg'],
             selectbackground=c['accent'], selectforeground='#ffffff',
             background=c['bg_input'], foreground=c['fg'],
-            padx=12, pady=12
+            padx=16, pady=16
         )
         self.text_field.pack(fill=tk.BOTH, expand=True)
+
+        # Forward mouse wheel from text field to scrollbar
+        def _on_mousewheel(event):
+            self.text_field.yview_scroll(-1 if event.delta > 0 else 1, 'units')
+        self.text_field.bind('<MouseWheel>', _on_mousewheel)
 
         self.text_field.tag_config("tag_green", foreground=self.colors['green'])
         self.text_field.tag_config("tag_red", foreground=self.colors['red'])
@@ -645,26 +924,28 @@ class GuiHandler:
         self.text_field.tag_config("tag_light_blue", foreground=self.colors['cyan'])
 
         self.text_field.config(state="disabled")
-        scrollbar.config(command=self.text_field.yview)
+        scrollbar._command = self.text_field.yview
 
     # ----- Debug Panel -----
 
     def create_debug_panel(self):
         c = self.colors
         self.debug_frame = tk.Frame(self.content, bg=c['bg_dark'], height=150)
-        self.debug_scrollbar = ttk.Scrollbar(self.debug_frame, style='Modern.Vertical.TScrollbar')
+        self.debug_scrollbar = ModernScrollbar(
+            self.debug_frame, bg='#1a1a2e',
+            thumb_color=c['orange'], thumb_hover=c['orange'], width=8
+        )
         self.debug_text = tk.Text(
             self.debug_frame, wrap=tk.WORD,
             yscrollcommand=self.debug_scrollbar.set,
             font=('Consolas', 9), relief='flat', borderwidth=0,
-            highlightthickness=1, highlightbackground=c['border'],
-            highlightcolor=c['orange'],
+            highlightthickness=0,
             background='#1a1a2e', foreground=c['orange'],
             insertbackground=c['orange'], state='disabled',
             padx=8, pady=8
         )
-        self.debug_scrollbar.config(command=self.debug_text.yview)
-        self.debug_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.debug_scrollbar._command = self.debug_text.yview
+        self.debug_scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 2), pady=4)
         self.debug_text.pack(fill=tk.BOTH, expand=True)
         self.debug_panel_visible = False
 
