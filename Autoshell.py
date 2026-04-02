@@ -771,6 +771,11 @@ class GuiHandler:
             self.record_button.config(text="Start Recording")
             gui_handler.print_text("SYSTEM INFO: \nInput Mode: Microphone\n\n", TEXT_COLOR_SETTINGS)
 
+    def change_model(self, selection):
+        model_name = selection.split("= ")[1] if "= " in selection else selection
+        self.selected_model = model_name
+        gui_handler.print_text(f"SYSTEM INFO: \nModel changed to {model_name}.\n\n", TEXT_COLOR_SETTINGS)
+
     def change_voice(self, voice):
         # Extract voice name from selection (remove "Voice = " prefix)
         voice_name = voice.split("= ")[1].lower() if "= " in voice else voice.lower()
@@ -846,13 +851,32 @@ class GuiHandler:
         # --- Settings toggles ---
         self._sidebar_label(sb, "SETTINGS")
 
+        # --- Model selection ---
+        self.selected_model = LARGE_LANGUAGE_MODEL
+        self.model_var = tk.StringVar(value=f"Model = {LARGE_LANGUAGE_MODEL}")
+        model_choices = [
+            "Model = gpt-5.4-nano",
+            "Model = gpt-5-mini",
+            "Model = gpt-4.1-mini",
+            "Model = gpt-4.1-nano",
+            "Model = gpt-4o-mini",
+            "Model = gpt-4o",
+        ]
+        model_dropdown = ttk.OptionMenu(
+            sb, self.model_var, f"Model = {LARGE_LANGUAGE_MODEL}",
+            *model_choices,
+            command=lambda x: self.change_model(x),
+            style='Sidebar.TMenubutton'
+        )
+        model_dropdown.pack(fill=tk.X, padx=16, pady=4)
+
         self.toggle_state = tk.IntVar(value=0)
         ttk.Checkbutton(
             sb, text="Direct Code Execution", variable=self.toggle_state,
             command=self.toggle_execution, style='Sidebar.TCheckbutton'
         ).pack(fill=tk.X, padx=16)
 
-        self.toggle_state_two = tk.IntVar(value=0)
+        self.toggle_state_two = tk.IntVar(value=1)
         ttk.Checkbutton(
             sb, text="Follow-Up Questions", variable=self.toggle_state_two,
             command=self.toggle_execution_two, style='Sidebar.TCheckbutton'
@@ -1406,10 +1430,11 @@ class OpenAiHandler:
         )
 
     def generate_AI_response(chat_history, client):
-        gui_handler.debug_log(f"Chat completions ({LARGE_LANGUAGE_MODEL})...")
+        model = gui_handler.selected_model
+        gui_handler.debug_log(f"Chat completions ({model})...")
         t = time.time()
         response = client.chat.completions.create(
-            model=LARGE_LANGUAGE_MODEL,
+            model=model,
             messages=chat_history
         )
 
@@ -1426,10 +1451,11 @@ class OpenAiHandler:
         PromptHandler.forward_by_ai(response_message)
 
     def generate_forwarding_decision(forwarding_chat_history, client):
-        gui_handler.debug_log(f"Forwarding decision ({LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION})...")
+        model = gui_handler.selected_model
+        gui_handler.debug_log(f"Forwarding decision ({model})...")
         t = time.time()
         response = client.chat.completions.create(
-            model=LARGE_LANGUAGE_MODEL_FOR_FORWARDING_DECISION,
+            model=model,
             messages=forwarding_chat_history
         )
 
@@ -1446,7 +1472,7 @@ class PromptHandler:
     def __init__(self):
         # default settings for toggle buttons
         self.ask_for_execution = True
-        self.follow_up_questions = False
+        self.follow_up_questions = True
         self.speech_output_enabled = True
         self.listen_to_keys = False
         self.pressed_key = None
